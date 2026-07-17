@@ -198,27 +198,34 @@ cat > "$APP_DIR/templates/index.html" << 'HTMLEOF'
 <title>JIMBO4 AMBIENT OPS</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=VT323&family=Space+Grotesk:wght@700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#0a0606;--hal:#ff1a1a;--amber:#ffb000;--cream:#f4ddb6;--teal:#2ec4b6;}
+:root{--bg:#0d0803;--hal:#ff1a1a;--amber:#ffb000;--gold:#d4a017;--cream:#f4ddb6;--teal:#2ec4b6;}
 *{margin:0;padding:0;box-sizing:border-box;}
-body{background:var(--bg);color:var(--cream);font-family:'IBM Plex Mono',monospace;
+body{background:radial-gradient(ellipse at 50% 40%,#160d04,var(--bg) 70%);color:var(--cream);font-family:'IBM Plex Mono',monospace;
   overflow:hidden;width:100vw;height:100vh;cursor:none;transition:filter 2s;}
 body.night{filter:brightness(.72);}
 
-/* cam background */
-#cam,#noise{position:fixed;inset:0;width:100vw;height:100vh;object-fit:cover;z-index:0;}
-#cam{filter:brightness(.42) saturate(.75);display:none;}
-#noise{filter:brightness(.25);}
-#nosig{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1;
-  font-family:'VT323',monospace;font-size:3.4vw;color:var(--hal);letter-spacing:.4em;
-  text-shadow:0 0 18px var(--hal);animation:blink 1.6s steps(2) infinite;}
+/* corner cam — gilded frame */
+#campanel{position:fixed;right:2vw;bottom:8vh;z-index:10;width:24vw;background:#000;
+  border:1px solid rgba(212,160,23,.65);outline:1px solid rgba(212,160,23,.28);outline-offset:4px;
+  box-shadow:0 0 20px rgba(212,160,23,.18);}
+#camlabel{display:flex;justify-content:space-between;padding:.4vh .6vw;font-size:1.5vh;
+  color:var(--gold);border-bottom:1px solid rgba(212,160,23,.35);letter-spacing:.2em;}
+#camlabel .rec{color:var(--hal);animation:blink 1.6s steps(2) infinite;}
+#camwrap{position:relative;height:13vw;}
+#cam,#noise{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;}
+#cam{filter:sepia(.35) saturate(.8) brightness(.95);display:none;}
+#noise{filter:brightness(.5) sepia(.6);}
+#nosig{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1;white-space:nowrap;
+  font-family:'VT323',monospace;font-size:1.5vw;color:var(--hal);letter-spacing:.3em;
+  text-shadow:0 0 12px var(--hal);animation:blink 1.6s steps(2) infinite;}
 @keyframes blink{50%{opacity:.25;}}
 
 /* CRT scanlines */
 body::after{content:"";position:fixed;inset:0;z-index:50;pointer-events:none;
   background:repeating-linear-gradient(0deg,rgba(0,0,0,.16) 0 1px,transparent 1px 3px);}
 
-.panel{position:fixed;z-index:10;background:rgba(10,6,6,.62);border:1px solid rgba(255,26,26,.35);
-  padding:1vh 1.2vw;backdrop-filter:blur(2px);}
+.panel{position:fixed;z-index:10;background:rgba(13,8,3,.62);border:1px solid rgba(212,160,23,.5);
+  outline:1px solid rgba(212,160,23,.2);outline-offset:4px;padding:1vh 1.2vw;backdrop-filter:blur(2px);}
 
 /* alert bar */
 #alerts{position:fixed;top:0;left:0;right:0;z-index:40;display:none;text-align:center;
@@ -253,14 +260,14 @@ body::after{content:"";position:fixed;inset:0;z-index:50;pointer-events:none;
 #date{font-size:2.4vh;color:var(--amber);letter-spacing:.3em;margin-top:.5vh;}
 
 /* services */
-#svc{bottom:9vh;right:2vw;font-size:1.8vh;line-height:2;}
+#svc{top:30vh;right:2vw;font-size:1.8vh;line-height:2;}
 #svc .dot{display:inline-block;width:1.1vh;height:1.1vh;border-radius:50%;margin-right:.6vw;}
 #svc .up{background:var(--teal);box-shadow:0 0 8px var(--teal);}
 #svc .dn{background:#511;}
 
 /* vitals bar */
-#vitals{position:fixed;bottom:0;left:0;right:0;z-index:20;background:rgba(10,6,6,.85);
-  border-top:1px solid rgba(255,26,26,.4);padding:1.1vh 2vw;font-size:1.9vh;
+#vitals{position:fixed;bottom:0;left:0;right:0;z-index:20;background:rgba(13,8,3,.85);
+  border-top:1px solid rgba(212,160,23,.5);padding:1.1vh 2vw;font-size:1.9vh;
   display:flex;gap:2vw;justify-content:space-between;font-variant-numeric:tabular-nums;
   white-space:nowrap;overflow:hidden;}
 #vitals b{color:var(--amber);font-weight:400;}
@@ -268,9 +275,14 @@ body::after{content:"";position:fixed;inset:0;z-index:50;pointer-events:none;
 </style>
 </head>
 <body>
-<img id="cam">
-<canvas id="noise"></canvas>
-<div id="nosig">▓▒░ NO SIGNAL ░▒▓</div>
+<div id="campanel">
+  <div id="camlabel"><span>◉ CAM-01 · 160°</span><span class="rec">● LIVE</span></div>
+  <div id="camwrap">
+    <img id="cam">
+    <canvas id="noise"></canvas>
+    <div id="nosig">NO SIGNAL</div>
+  </div>
+</div>
 <div id="alerts"></div>
 
 <div class="panel" id="hdr">
