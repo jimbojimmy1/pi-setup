@@ -652,7 +652,13 @@ class CLIBackend:
         except subprocess.TimeoutExpired as e:
             raise LLMError("claude CLI timed out") from e
         if p.returncode != 0:
-            raise LLMError(f"claude CLI failed: {p.stderr.strip()[:300]}")
+            # The CLI sometimes exits non-zero with nothing on stderr (transient
+            # capacity being the usual cause), so surface the code and any
+            # stdout too — an empty "CLI failed:" tells an operator nothing.
+            detail = p.stderr.strip() or p.stdout.strip() or "no output"
+            raise LLMError(f"claude CLI exit {p.returncode}: {detail[:300]}")
+        if not p.stdout.strip():
+            raise LLMError("claude CLI returned an empty response")
         return p.stdout.strip(), {
             "backend": self.name,
             "model": MODEL,
