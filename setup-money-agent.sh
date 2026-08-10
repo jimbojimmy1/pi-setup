@@ -21,6 +21,10 @@
 #    money-agent      the debate daemon (runs forever)
 #    money-agent-web  dashboard on :8086
 #
+#  Don't want to wait for the drip? Fill the board in one go:
+#    python3 ~/money-agent/agent.py --burst 16 --parallel 4
+#  Ideas are claimed atomically, so a burst and the daemon can run at once.
+#
 #  WHAT IT DOES:  finds, stress-tests and ranks money-making
 #                 plays, and keeps an ACTION QUEUE of the next
 #                 concrete steps with hours + dollars attached.
@@ -71,6 +75,11 @@ MA_DAILY_USD=2.00
 
 # ---- pace ----
 MA_TICK_SECONDS=900         # one debate round every 15 min (~96/day)
+
+# fast     = optimise for revenue in weeks; favours services and selling
+#            existing skills, weights time-to-first-dollar above moat
+# balanced = optimise for durable monthly income; weights defensibility equally
+MA_HORIZON=fast
 
 # ---- debate shape ----
 MA_MAX_ROUNDS=4             # ITERATE attempts before an idea is parked
@@ -263,23 +272,59 @@ def update_idea(i, **kw):
     c.commit()
 
 
-def next_target(max_rounds):
-    """The idea most deserving of the next debate round.
+def claim_target(max_rounds):
+    """Atomically claim the idea most deserving of the next debate round.
 
     Shallow before deep (bank the fundamentals first), fewest rounds first
-    (don't starve anything), then most promising.
+    (don't starve anything), then most promising. The claim flips it to
+    'working' inside an IMMEDIATE transaction so parallel workers — or a second
+    daemon someone forgot about — can never grab the same idea twice.
     """
-    r = conn().execute(
-        "SELECT * FROM ideas WHERE status IN ('pending','live') AND rounds < ?"
-        " ORDER BY depth ASC, rounds ASC, best_score DESC, id ASC LIMIT 1",
-        (max_rounds,),
-    ).fetchone()
-    return dict(r) if r else None
+    c = conn()
+    c.execute("BEGIN IMMEDIATE")
+    try:
+        r = c.execute(
+            "SELECT * FROM ideas WHERE status IN ('pending','live') AND rounds < ?"
+            " ORDER BY depth ASC, rounds ASC, best_score DESC, id ASC LIMIT 1",
+            (max_rounds,),
+        ).fetchone()
+        if r is None:
+            c.execute("COMMIT")
+            return None
+        c.execute(
+            "UPDATE ideas SET status='working', updated_at=? WHERE id=?",
+            (time.time(), r["id"]),
+        )
+        c.execute("COMMIT")
+        return dict(r)
+    except Exception:
+        c.execute("ROLLBACK")
+        raise
+
+
+def release(idea_id, had_rounds):
+    """Hand a claimed idea back unworked (crash, LLM error, shutdown)."""
+    conn().execute(
+        "UPDATE ideas SET status=?, updated_at=? WHERE id=? AND status='working'",
+        ("live" if had_rounds else "pending", time.time(), idea_id),
+    )
+    conn().commit()
+
+
+def release_stale():
+    """Startup recovery: anything left 'working' by a killed process."""
+    c = conn()
+    cur = c.execute(
+        "UPDATE ideas SET status = CASE WHEN rounds > 0 THEN 'live' ELSE 'pending' END"
+        " WHERE status='working'"
+    )
+    c.commit()
+    return cur.rowcount
 
 
 def open_count():
     return conn().execute(
-        "SELECT COUNT(*) n FROM ideas WHERE status IN ('pending','live')"
+        "SELECT COUNT(*) n FROM ideas WHERE status IN ('pending','live','working')"
     ).fetchone()["n"]
 
 
@@ -372,7 +417,7 @@ def action_queue(limit=25):
     rows = conn().execute(
         "SELECT a.*, i.title, i.best_score, i.status AS idea_status FROM actions a"
         " JOIN ideas i ON i.id=a.idea_id"
-        " WHERE a.done=0 AND i.status IN ('promoted','live','pending','parked')"
+        " WHERE a.done=0 AND i.status IN ('promoted','live','pending','parked','working')"
         " ORDER BY i.best_score DESC, a.cost_usd ASC, a.hours ASC LIMIT ?",
         (limit,),
     ).fetchall()
@@ -735,6 +780,24 @@ MAX_OPEN = cfg("MA_MAX_OPEN", "12", int)
 PROMOTE_AT = cfg("MA_PROMOTE_AT", "72", int)
 KILL_AT = cfg("MA_KILL_AT", "35", int)
 DAILY_USD = cfg("MA_DAILY_USD", "2.00", float)
+HORIZON = os.environ.get("MA_HORIZON", "fast").strip().lower()
+
+HORIZON_NOTES = {
+    "fast": (
+        "PRIORITY THIS RUN — SPEED TO THE FIRST REAL DOLLAR. The operator wants "
+        "revenue in weeks, not quarters. Weight time-to-first-dollar and cheap "
+        "validation far above defensibility and long-run ceiling. A boring "
+        "service that bills a customer this month beats an elegant product that "
+        "bills someone next year. Selling the operator's existing skills "
+        "directly is a legitimate answer here, not a cop-out — say so if it is "
+        "the fastest honest path. Prefer plays whose first dollar needs no new "
+        "build, no new account, and no permission from a gatekeeper."
+    ),
+    "balanced": (
+        "PRIORITY THIS RUN — DURABLE MONTHLY INCOME. Weight defensibility and "
+        "the long-run ceiling as heavily as speed to the first dollar."
+    ),
+}
 
 RUNNING = True
 
@@ -818,8 +881,9 @@ def board_block():
 
 def system_prompt(profile, role):
     """Stable prefix first (cacheable), volatile board/lessons last."""
+    horizon = HORIZON_NOTES.get(HORIZON, HORIZON_NOTES["balanced"])
     return (
-        f"{GROUND_RULES}\n\nYOUR ROLE THIS TURN: {role}\n\n"
+        f"{GROUND_RULES}\n\nYOUR ROLE THIS TURN: {role}\n\n{horizon}\n\n"
         f"{profile_block(profile)}\n\n{lessons_block()}\n\n{board_block()}"
     )
 
@@ -1142,19 +1206,22 @@ class Agent:
         store.update_idea(idea["id"], **fields)
         log(f"  verdict {verdict} score {judge['score']} -> {fields['status']}")
 
-    # ---------- one scheduler tick ----------
-    def tick(self):
-        spent, calls = store.spend_today()
+    # ---------- budget ----------
+    def over_budget(self):
+        spent, _ = store.spend_today()
         if DAILY_USD > 0 and spent >= DAILY_USD:
             store.set_meta("state", "paused-budget")
             store.set_meta(
                 "current", f"paused: ${spent:.2f} of ${DAILY_USD:.2f} daily cap used"
             )
             log(f"daily cap reached (${spent:.4f} / ${DAILY_USD:.2f}); idling")
-            return
+            return True
+        return False
 
-        store.set_meta("state", "working")
-        target = store.next_target(MAX_ROUNDS)
+    # ---------- one unit of work (thread-safe) ----------
+    def unit(self):
+        """Debate the best claimable idea, or seed a root if there is none."""
+        target = store.claim_target(MAX_ROUNDS)
         if target is None:
             if store.open_count() < MAX_OPEN:
                 self.seed_root()
@@ -1164,16 +1231,85 @@ class Agent:
                     "current",
                     f"{MAX_OPEN} open ideas — working the queue before seeding more",
                 )
-                log("no eligible target and the board is full; idling this tick")
+                log("no eligible target and the board is full")
             return
-        self.run_round(target)
+        try:
+            self.run_round(target)
+        except BaseException as e:
+            # Never leave a claimed idea stranded in 'working'. Log here rather
+            # than only at the burst's end, otherwise a released-and-retried
+            # idea just looks like a duplicate round in the log.
+            store.release(target["id"], target["rounds"])
+            log(
+                f"  round on #{target['id']} failed "
+                f"({type(e).__name__}: {str(e)[:160]}); released for retry"
+            )
+            raise
+
+    # ---------- one scheduler tick ----------
+    def tick(self):
+        if self.over_budget():
+            return
+        store.set_meta("state", "working")
+        self.unit()
+
+    # ---------- burst: N rounds back-to-back, K at a time ----------
+    def burst(self, n, parallel):
+        from concurrent.futures import ThreadPoolExecutor
+
+        store.set_meta("state", "burst")
+        log(f"burst: {n} units of work, {parallel} at a time")
+        done = errors = 0
+        with ThreadPoolExecutor(max_workers=parallel) as pool:
+            pending = []
+            for _ in range(n):
+                if not RUNNING or self.over_budget():
+                    break
+                pending.append(pool.submit(self.unit))
+            for f in pending:
+                try:
+                    f.result()
+                    done += 1
+                except Exception as e:
+                    errors += 1
+                    log(f"unit failed: {type(e).__name__}: {e}")
+        log(f"burst finished: {done} ok, {errors} failed")
+        store.set_meta("state", "idle")
+        return errors
 
 
 def main():
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Money agent debate daemon")
+    ap.add_argument(
+        "--burst",
+        type=int,
+        default=0,
+        metavar="N",
+        help="run N rounds back-to-back and exit (skips the tick delay)",
+    )
+    ap.add_argument(
+        "--parallel",
+        type=int,
+        default=1,
+        metavar="K",
+        help="debate K ideas concurrently (burst mode only)",
+    )
+    args = ap.parse_args()
+
     store.init()
+    freed = store.release_stale()
+    if freed:
+        log(f"recovered {freed} idea(s) left mid-round by a previous process")
     store.set_meta("started_at", time.time())
     store.set_meta("pid", os.getpid())
     agent = Agent()
+
+    if args.burst > 0:
+        errors = agent.burst(args.burst, max(1, args.parallel))
+        return 1 if errors and errors >= args.burst else 0
+
     log(f"loop starting: one round every {TICK}s, daily cap ${DAILY_USD:.2f}")
 
     while RUNNING:
@@ -1593,6 +1729,9 @@ echo "║  2. Tell it who it is earning for — this steers       ║"
 echo "║     every idea it has:                                ║"
 echo "║       nano $APP_DIR/profile.json"
 echo "║  3. Restart:  sudo systemctl restart money-agent      ║"
+echo "║                                                      ║"
+echo "║  Don't wait for the drip — fill the board now:        ║"
+echo "║     python3 $APP_DIR/agent.py --burst 16 --parallel 4"
 echo "║                                                      ║"
 echo "║  Watch it think:                                      ║"
 echo "║     journalctl -u money-agent -f                     ║"
