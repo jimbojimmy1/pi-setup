@@ -228,6 +228,7 @@ class DryRunBackend:
                     }
                 ],
                 "child_questions": [],
+                "experiment": {},
                 "lesson": "A debate with no model in it is just a cron job.",
             }
             return json.dumps(payload), self._usage()

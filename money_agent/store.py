@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS experiments(
   hypothesis     TEXT    NOT NULL,
   deliverable    TEXT    NOT NULL,
   metric         TEXT    NOT NULL,
+  stop_condition TEXT    NOT NULL DEFAULT '',
   window_days    INTEGER NOT NULL,
   autonomy_class TEXT    NOT NULL,
   status         TEXT    NOT NULL DEFAULT 'ready',
@@ -117,6 +118,13 @@ def conn():
 def init():
     c = conn()
     c.executescript(SCHEMA)
+    columns = {
+        row["name"] for row in c.execute("PRAGMA table_info(experiments)").fetchall()
+    }
+    if "stop_condition" not in columns:
+        c.execute(
+            "ALTER TABLE experiments ADD COLUMN stop_condition TEXT NOT NULL DEFAULT ''"
+        )
     c.commit()
 
 
@@ -273,6 +281,7 @@ def add_experiment(
     hypothesis,
     deliverable,
     metric,
+    stop_condition,
     window_days,
     autonomy_class,
     hours,
@@ -282,8 +291,8 @@ def add_experiment(
     c = conn()
     cur = c.execute(
         "INSERT INTO experiments(idea_id,project,action_kind,hypothesis,deliverable,"
-        "metric,window_days,autonomy_class,status,hours,cost_usd,created_at,updated_at)"
-        " VALUES(?,?,?,?,?,?,?,?,'ready',?,?,?,?)",
+        "metric,stop_condition,window_days,autonomy_class,status,hours,cost_usd,"
+        "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'ready',?,?,?,?)",
         (
             int(idea_id),
             str(project).strip(),
@@ -291,6 +300,7 @@ def add_experiment(
             str(hypothesis).strip(),
             str(deliverable).strip(),
             str(metric).strip(),
+            str(stop_condition).strip(),
             int(window_days),
             str(autonomy_class).strip(),
             float(hours or 0),
@@ -301,6 +311,20 @@ def add_experiment(
     )
     c.commit()
     return cur.lastrowid
+
+
+def find_experiment(idea_id, project, action_kind, deliverable):
+    row = conn().execute(
+        "SELECT * FROM experiments WHERE idea_id=? AND project=? AND action_kind=?"
+        " AND deliverable=? ORDER BY id ASC LIMIT 1",
+        (
+            int(idea_id),
+            str(project).strip(),
+            str(action_kind).strip(),
+            str(deliverable).strip(),
+        ),
+    ).fetchone()
+    return dict(row) if row else None
 
 
 def get_experiment(experiment_id):

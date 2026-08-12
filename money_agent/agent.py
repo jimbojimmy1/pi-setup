@@ -11,8 +11,13 @@ import signal
 import sys
 import time
 
-import llm
-import store
+try:
+    from . import llm, store
+    from .experiments import classify_action, export_work_package
+except ImportError:  # Installed scripts also run directly on the Raspberry Pi.
+    import llm
+    import store
+    from experiments import classify_action, export_work_package
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -201,6 +206,37 @@ JUDGE_SCHEMA = {
             },
         },
         "child_questions": {"type": "array", "items": {"type": "string"}},
+        "experiment": {
+            "oneOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "project": {"type": "string"},
+                        "action_kind": {"type": "string"},
+                        "hypothesis": {"type": "string"},
+                        "deliverable": {"type": "string"},
+                        "metric": {"type": "string"},
+                        "window_days": {"type": "integer"},
+                        "hours": {"type": "number"},
+                        "cost_usd": {"type": "number"},
+                        "stop_condition": {"type": "string"},
+                    },
+                    "required": [
+                        "project",
+                        "action_kind",
+                        "hypothesis",
+                        "deliverable",
+                        "metric",
+                        "window_days",
+                        "hours",
+                        "cost_usd",
+                        "stop_condition",
+                    ],
+                    "additionalProperties": False,
+                },
+                {"type": "object", "maxProperties": 0},
+            ]
+        },
         "lesson": {"type": "string"},
     },
     "required": [
@@ -213,6 +249,7 @@ JUDGE_SCHEMA = {
         "strongest_objection",
         "next_actions",
         "child_questions",
+        "experiment",
         "lesson",
     ],
     "additionalProperties": False,
@@ -387,6 +424,11 @@ class Agent:
             "whether this actually works (pricing, first customer, distribution, "
             "delivery cost). Each must be answerable on its own. Empty list "
             "otherwise.\n"
+            "- experiment: if and only if you PROMOTE, provide exactly one "
+            "bounded experiment. Prefer improving an owned project from the "
+            "operator profile over proposing a new business. The metric must "
+            "name its observable source, cost_usd must be honest, and the stop "
+            "condition must be objective. Use an empty object otherwise.\n"
             "- lesson: one durable, transferable sentence for future debates. "
             "Not a restatement of this idea — something that will still be true "
             "for the next twenty."
@@ -437,6 +479,7 @@ class Agent:
 
         if verdict == "PROMOTE":
             fields["status"] = "promoted"
+            self.persist_experiment(idea["id"], judge)
             kids = [q for q in (judge.get("child_questions") or []) if str(q).strip()]
             if idea["depth"] < MAX_DEPTH:
                 for q in kids[:CHILD_FANOUT]:
@@ -457,6 +500,81 @@ class Agent:
 
         store.update_idea(idea["id"], **fields)
         log(f"  verdict {verdict} score {judge['score']} -> {fields['status']}")
+
+    def persist_experiment(self, idea_id, judge):
+        if judge.get("verdict") != "PROMOTE":
+            return None
+        experiment = judge.get("experiment")
+        if not isinstance(experiment, dict):
+            return None
+
+        text_fields = (
+            "project",
+            "action_kind",
+            "hypothesis",
+            "deliverable",
+            "metric",
+            "stop_condition",
+        )
+        if any(not str(experiment.get(field, "")).strip() for field in text_fields):
+            return None
+        try:
+            window_days = int(experiment.get("window_days", 0))
+            hours = float(experiment.get("hours", 0))
+            cost_usd = float(experiment.get("cost_usd", 0))
+        except (TypeError, ValueError):
+            return None
+        if window_days < 1 or hours < 0 or cost_usd < 0:
+            return None
+
+        existing = store.find_experiment(
+            idea_id,
+            experiment["project"],
+            experiment["action_kind"],
+            experiment["deliverable"],
+        )
+        if existing:
+            return existing["id"]
+
+        autonomy_class = classify_action(experiment["action_kind"], cost_usd)
+        if autonomy_class == "REJECTED":
+            return None
+        experiment_id = store.add_experiment(
+            idea_id=idea_id,
+            project=experiment["project"],
+            action_kind=experiment["action_kind"],
+            hypothesis=experiment["hypothesis"],
+            deliverable=experiment["deliverable"],
+            metric=experiment["metric"],
+            stop_condition=experiment["stop_condition"],
+            window_days=window_days,
+            autonomy_class=autonomy_class,
+            hours=hours,
+            cost_usd=cost_usd,
+        )
+        store.add_experiment_event(
+            experiment_id,
+            "ready",
+            f"Policy classified this work as {autonomy_class}.",
+        )
+        return experiment_id
+
+    def export_next_experiment(self):
+        store.recover_stale_experiments()
+        claimed = store.claim_experiment()
+        if claimed is None:
+            return None
+        payload = dict(claimed)
+        payload["experiment_id"] = claimed["id"]
+        payload["next_action"] = claimed["deliverable"]
+        artifact_root = os.environ.get(
+            "MA_ARTIFACT_ROOT", os.path.join(HERE, "artifacts")
+        )
+        paths = export_work_package(payload, artifact_root)
+        store.add_experiment_event(
+            claimed["id"], "exported", f"Work package: {paths.json_path}"
+        )
+        return claimed
 
     # ---------- budget ----------
     def over_budget(self):
@@ -503,6 +621,8 @@ class Agent:
         if self.over_budget():
             return
         store.set_meta("state", "working")
+        if self.export_next_experiment() is not None:
+            return
         self.unit()
 
     # ---------- burst: N rounds back-to-back, K at a time ----------

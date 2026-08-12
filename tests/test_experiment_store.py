@@ -31,6 +31,7 @@ class ExperimentStoreTest(unittest.TestCase):
             hypothesis="A niche audit page attracts qualified visitors.",
             deliverable="Create one audit page for local roofers.",
             metric="qualified_snapshot_runs",
+            stop_condition="Stop after 30 days with no qualified runs.",
             window_days=30,
             autonomy_class="CODEX_REVIEWED",
             hours=2,
