@@ -20,6 +20,8 @@ class SourceLayoutTest(unittest.TestCase):
         self.assertIn("python3 -m unittest discover -s tests -v", text)
         self.assertIn("bash -n setup-money-agent.sh", text)
         self.assertIn("bash tests/test_installer.sh", text)
+        self.assertIn("uses: actions/checkout@v5", text)
+        self.assertIn("uses: actions/setup-python@v6", text)
 
 
 if __name__ == "__main__":

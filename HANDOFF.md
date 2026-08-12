@@ -90,8 +90,10 @@ Latest combined verification before this documentation update:
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
 - Python 3.11 `python -m unittest discover -s tests -v`: 43 tests passed in
-  0.974 seconds
+  0.959 seconds
 - `git diff --check`: exit 0
+- GitHub Actions run `31645803074`: all steps passed; the workflow was then
+  moved to the Node 24 action releases to remove its runtime deprecation warning
 
 ## Commits added in this workstream
 
