@@ -92,6 +92,7 @@ unchanged.
 | --- | ---: | --- |
 | `ANTHROPIC_API_KEY` | empty | Enables the Anthropic API backend. Treat it as a secret. |
 | `MA_DAILY_USD` | `0.00` | Stops API-backed work at the UTC daily cap. |
+| `MA_TRUSTED_MEASUREMENT_SOURCES` | empty | Comma-separated read-only sources configured outside the model. |
 | `MA_TICK_SECONDS` | `900` | Seconds between daemon cycles. |
 | `MA_HORIZON` | `fast` | Favors speed to a first verified payment. |
 | `MA_MAX_ROUNDS` | `4` | Iterations allowed per idea. |
@@ -134,6 +135,32 @@ authorized repository or owned site, verifies changes, updates the handoff, and
 keeps the draft pull request recoverable. A heartbeat is not permission to
 spend, send messages, create accounts, or make payment changes.
 
+## Measurement evidence
+
+Experiments now store a measurement source and append-only observations. The
+model may propose a source, but the daemon accepts it only if it appears in
+`MA_TRUSTED_MEASUREMENT_SOURCES`. `public_http:https://...` is the exception:
+it may be accepted after public-address validation, but it proves availability,
+not a sale.
+
+Allowed source kinds are:
+
+- `analytics_readonly`
+- `payment_provider_readonly`
+- `owner_verified`
+- `public_http`
+
+Unknown sources fail closed. Missing sources move an experiment to `blocked`
+and create one blocker event. Matching evidence moves non-terminal experiments
+to `measuring`. Duplicate evidence references do not create duplicate rows.
+Analytics and public-health evidence cannot report revenue. A positive payment
+amount requires `payment_provider_readonly` or `owner_verified` evidence.
+
+The database boundary is ready for a read-only adapter, but this release does
+not log in to Stripe, PayPal, or an analytics account and does not poll them.
+Do not add a source name to the trusted list until its read-only adapter is
+configured and tested.
+
 ## FunnelSleuth blocker
 
 FunnelSleuth is the first owned project. Its current offers are a $79 audit and
@@ -141,6 +168,6 @@ a $299 Fix Sprint. Checkout still needs one owner-authenticated action: create
 or select an existing Stripe or PayPal payment link and connect it to the site.
 The agent may display this blocker but cannot complete it or request credentials.
 
-Automatic result collection is not yet implemented. Until a trusted analytics
-or payment event source is configured, treat experiment outcomes and revenue as
+Automatic provider collection is not yet implemented. Until a trusted analytics
+or payment adapter supplies evidence, treat experiment outcomes and revenue as
 unverified.
