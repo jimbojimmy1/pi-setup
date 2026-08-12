@@ -15,6 +15,8 @@ do
   cmp "$root/money_agent/$file" "$app/$file"
 done
 
+grep -Fx 'MA_TRUSTED_MEASUREMENT_SOURCES=' "$app/config.env"
+
 printf '%s\n' 'MA_DAILY_USD=0' > "$app/config.env"
 printf '%s\n' '{"customized": true}' > "$app/profile.json"
 printf '%s\n' 'durable data' > "$app/money.db"

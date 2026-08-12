@@ -78,6 +78,10 @@ MA_MAX_TOKENS=12000
 # API spending is disabled by default. Raise only with explicit owner approval.
 MA_DAILY_USD=0.00
 
+# Comma-separated sources configured outside the model (for example,
+# analytics_readonly). Leave empty until a read-only source is actually wired.
+MA_TRUSTED_MEASUREMENT_SOURCES=
+
 MA_TICK_SECONDS=900
 MA_HORIZON=fast
 MA_MAX_ROUNDS=4
