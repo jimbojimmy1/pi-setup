@@ -57,6 +57,7 @@ class MonitoringTest(unittest.TestCase):
             "https://169.254.1.1",
             "https://10.0.0.1",
             "https://192.0.2.1",
+            "https://example.com/\r\nInjected: yes",
         )
         for url in invalid:
             with self.subTest(url=url), self.assertRaises(MonitoringError):
@@ -225,6 +226,108 @@ class MonitoringTest(unittest.TestCase):
                 observed_at=1000,
                 outcome="won",
             )
+
+    def add_health_experiment(self):
+        idea_id = self.store.add_idea("Public availability")
+        return self.store.add_experiment(
+            idea_id=idea_id,
+            project="FunnelSleuth",
+            action_kind="public_health_check",
+            hypothesis="The public page remains reachable.",
+            deliverable="Check the owned public page.",
+            metric="public_availability",
+            stop_condition="Escalate after repeated unavailability.",
+            window_days=30,
+            autonomy_class="AUTO_LOCAL",
+            hours=0,
+            cost_usd=0,
+            measurement_source="public_http:https://example.com/health?probe=1",
+        )
+
+    def test_probe_uses_validated_ip_and_follows_no_redirects(self):
+        from money_agent.monitoring import probe_public_https
+
+        calls = []
+
+        def resolver(host, port, type=0):
+            return [
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port)),
+                (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.35", port)),
+            ]
+
+        def connector(host, address, path, timeout, max_response_bytes):
+            calls.append((host, address, path, timeout, max_response_bytes))
+            return 302
+
+        result = probe_public_https(
+            "https://example.com/health?probe=1",
+            resolver=resolver,
+            connector=connector,
+            timeout=7,
+            max_response_bytes=2048,
+        )
+
+        self.assertEqual(result["status"], 302)
+        self.assertTrue(result["available"])
+        self.assertEqual(
+            calls,
+            [("example.com", "93.184.216.34", "/health?probe=1", 7, 2048)],
+        )
+
+    def test_health_collection_is_one_availability_observation_per_bucket(self):
+        from money_agent.monitoring import collect_public_health
+
+        experiment_id = self.add_health_experiment()
+        calls = []
+
+        def resolver(host, port, type=0):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+        def connector(host, address, path, timeout, max_response_bytes):
+            calls.append(address)
+            return 200
+
+        first = collect_public_health(
+            experiment_id,
+            now=7201,
+            bucket_seconds=3600,
+            resolver=resolver,
+            connector=connector,
+        )
+        second = collect_public_health(
+            experiment_id,
+            now=7250,
+            bucket_seconds=3600,
+            resolver=resolver,
+            connector=connector,
+        )
+
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(calls, ["93.184.216.34"])
+        self.assertEqual(first["value"], 1)
+        self.assertEqual(first["revenue_usd"], 0)
+        self.assertEqual(self.store.get_experiment(experiment_id)["status"], "measuring")
+
+    def test_health_failure_records_zero_without_closing_experiment(self):
+        from money_agent.monitoring import collect_public_health
+
+        experiment_id = self.add_health_experiment()
+
+        def resolver(host, port, type=0):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+        def connector(host, address, path, timeout, max_response_bytes):
+            raise TimeoutError("offline")
+
+        observation = collect_public_health(
+            experiment_id,
+            now=10801,
+            resolver=resolver,
+            connector=connector,
+        )
+
+        self.assertEqual(observation["value"], 0)
+        self.assertEqual(self.store.get_experiment(experiment_id)["status"], "measuring")
 
 
 if __name__ == "__main__":
