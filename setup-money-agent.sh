@@ -16,6 +16,7 @@ REQUIRED_FILES=(
   agent.py
   experiments.py
   monitoring.py
+  import_observation.py
   app.py
   profile.json
   templates/index.html
