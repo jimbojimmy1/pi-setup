@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-11 22:11 (America/New_York)
+Updated: 2026-08-11 23:12 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `ec400eb`
+- Latest implementation commit before this handoff update: `d74daf4`
 - PR state checked before this update: open, draft, no checks configured
-- Remote PR head before this update: `d89c2e6`
+- Remote PR head before this update: `652d387`
 
 ## Implemented architecture
 
@@ -39,6 +39,14 @@ impersonating the owner.
   prevents analytics or health evidence from reporting revenue.
 - A model cannot trust its own proposed connector; the installer defaults
   `MA_TRUSTED_MEASUREMENT_SOURCES` to empty.
+- A strict local importer accepts one bounded JSON observation from a file or
+  stdin, rejects unknown and sensitive-looking fields, and never echoes rejected
+  payload contents.
+- Evidence-backed outcomes are deterministic: wins need positive evidence,
+  losses need a completed window with no payment, public health cannot close an
+  experiment, and terminal conflicts are rejected.
+- Accepted terminal results add an event and a reusable lesson for future idea
+  scoring.
 
 ## Current owned revenue project
 
@@ -68,7 +76,7 @@ Latest combined verification before this documentation update:
 - `bash -n setup-money-agent.sh`: exit 0
 - `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- `python3 -m unittest discover -s tests -v`: 21 tests passed in 0.586 seconds
+- `python3 -m unittest discover -s tests -v`: 30 tests passed in 0.666 seconds
 - `git diff --check`: exit 0 before each monitoring commit
 
 ## Commits added in this workstream
@@ -89,11 +97,15 @@ Latest combined verification before this documentation update:
 - `36c5a02` enforce the fail-closed monitoring policy
 - `ced8cdc` integrate monitoring with the daemon, dashboard, and installer
 - `ec400eb` default configured measurement sources to untrusted
+- `652d387` hand off evidence-backed monitoring
+- `75ba199` plan strict local observation import
+- `f97fa69` add the strict JSON importer
+- `d74daf4` apply evidence-backed terminal outcomes
 
 ## Next action
 
-Add a local, read-only observation import command with strict JSON validation so
-an approved analytics or payment connector can feed the evidence ledger without
-database access. Then add deterministic, evidence-backed `won` and `lost`
-transitions. Do not connect accounts or request credentials without explicit
-owner approval.
+Add an atomic observation inbox and bounded public-health adapter. The daemon
+may consume validated files deposited by an approved read-only adapter and may
+check the existing FunnelSleuth public URL for availability. Health evidence
+must remain separate from conversions and revenue. Do not connect financial or
+analytics accounts or request credentials without explicit owner approval.

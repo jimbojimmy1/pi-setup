@@ -161,6 +161,53 @@ not log in to Stripe, PayPal, or an analytics account and does not poll them.
 Do not add a source name to the trusted list until its read-only adapter is
 configured and tested.
 
+### Import one observation
+
+The local importer accepts one JSON object from a file or stdin. It rejects
+unknown fields, credential-like fields, invalid types, and input larger than 64
+KiB. Rejected input produces a generic error and is not echoed to logs.
+
+```json
+{
+  "experiment_id": 7,
+  "source_kind": "analytics_readonly",
+  "metric": "qualified runs",
+  "value": 3,
+  "evidence_ref": "analytics:event-123",
+  "observed_at": 1786500000,
+  "revenue_usd": 0,
+  "outcome": "measuring",
+  "window_complete": false
+}
+```
+
+Import a named file:
+
+```bash
+python3 ~/money-agent/import_observation.py observation.json
+```
+
+Or pipe the object through stdin:
+
+```bash
+python3 ~/money-agent/import_observation.py - < observation.json
+```
+
+Exit code `0` means the observation was accepted or already existed. Exit code
+`2` means it was rejected. Successful output contains only experiment ID,
+observation ID, and current status; it omits the evidence reference and payload.
+
+`outcome` may be omitted or set to `measuring`, `won`, or `lost`:
+
+- `won` requires a positive verified metric or permitted payment amount.
+- `lost` requires `window_complete: true` and no observed payment.
+- `public_http` observations cannot set `won` or `lost`.
+- a terminal `won`/`lost` result cannot be changed to the opposite outcome.
+
+A positive analytics metric can verify that experiment's declared metric. It
+does not prove a sale and is never labeled as revenue. Positive revenue still
+requires `payment_provider_readonly` or `owner_verified` evidence.
+
 ## FunnelSleuth blocker
 
 FunnelSleuth is the first owned project. Its current offers are a $79 audit and
@@ -168,6 +215,7 @@ a $299 Fix Sprint. Checkout still needs one owner-authenticated action: create
 or select an existing Stripe or PayPal payment link and connect it to the site.
 The agent may display this blocker but cannot complete it or request credentials.
 
-Automatic provider collection is not yet implemented. Until a trusted analytics
-or payment adapter supplies evidence, treat experiment outcomes and revenue as
-unverified.
+Automatic provider collection is not yet implemented. The importer is a safe
+input boundary for a future adapter, not proof that any account is connected.
+Until a trusted analytics or payment adapter supplies evidence, treat experiment
+outcomes and revenue as unverified.
