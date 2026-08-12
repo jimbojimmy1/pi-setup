@@ -134,6 +134,7 @@ class AgentExperimentTest(unittest.TestCase):
         calls = []
 
         agent.over_budget = lambda: False
+        agent.bootstrap_owned_health_checks = lambda: calls.append("bootstrap")
         agent.process_observation_inbox = lambda: calls.append("inbox")
         agent.monitor_experiments = lambda: calls.append("monitor")
         agent.export_next_experiment = lambda: calls.append("export") or {"id": 1}
@@ -141,7 +142,38 @@ class AgentExperimentTest(unittest.TestCase):
 
         agent.tick()
 
-        self.assertEqual(calls, ["inbox", "monitor", "export"])
+        self.assertEqual(calls, ["bootstrap", "inbox", "monitor", "export"])
+
+    def test_owned_project_health_check_is_bootstrapped_once(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        agent.profile = {
+            "owned_projects": [
+                {
+                    "name": "FunnelSleuth",
+                    "url": "https://funnelsleuth.example/",
+                }
+            ]
+        }
+
+        with patch.object(
+            agent_module,
+            "validate_public_https_url",
+            return_value="https://funnelsleuth.example/",
+        ):
+            first = agent.bootstrap_owned_health_checks()
+            second = agent.bootstrap_owned_health_checks()
+
+        self.assertEqual(first, 1)
+        self.assertEqual(second, 0)
+        experiments = self.store.list_experiments()
+        self.assertEqual(len(experiments), 1)
+        self.assertEqual(experiments[0]["action_kind"], "public_health_check")
+        self.assertEqual(experiments[0]["metric"], "public_availability")
+        self.assertEqual(experiments[0]["autonomy_class"], "AUTO_LOCAL")
+        self.assertEqual(experiments[0]["cost_usd"], 0)
 
     def test_monitoring_collects_public_health_for_health_sources(self):
         import money_agent.agent as agent_module

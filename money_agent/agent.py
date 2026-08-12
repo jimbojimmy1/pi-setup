@@ -624,6 +624,68 @@ class Agent:
             monitored += 1
         return monitored
 
+    def bootstrap_owned_health_checks(self):
+        existing = {
+            (
+                experiment["project"],
+                experiment["action_kind"],
+                experiment["measurement_source"],
+            )
+            for experiment in store.list_experiments()
+        }
+        created = 0
+        projects = self.profile.get("owned_projects", [])
+        if not isinstance(projects, list):
+            return 0
+        for project in projects:
+            if not isinstance(project, dict):
+                continue
+            name = str(project.get("name", "")).strip()
+            url = str(project.get("url", "")).strip()
+            proposed_source = f"public_http:{url}"
+            if not name or not url:
+                continue
+            if (name, "public_health_check", proposed_source) in existing:
+                continue
+            try:
+                normalized_url = validate_public_https_url(url)
+            except MonitoringError:
+                continue
+            measurement_source = f"public_http:{normalized_url}"
+            key = (name, "public_health_check", measurement_source)
+            if key in existing:
+                continue
+            idea_id = store.add_idea(
+                f"{name} public availability",
+                thesis=(
+                    f"Verify that the owned public project {name} remains "
+                    "reachable without treating uptime as traffic, conversion, "
+                    "or revenue evidence."
+                ),
+            )
+            experiment_id = store.add_experiment(
+                idea_id=idea_id,
+                project=name,
+                action_kind="public_health_check",
+                hypothesis=f"The owned public project {name} remains reachable.",
+                deliverable=f"Record bounded HTTPS availability for {name}.",
+                metric="public_availability",
+                stop_condition="Escalate repeated unavailability; never infer sales.",
+                window_days=30,
+                autonomy_class="AUTO_LOCAL",
+                hours=0,
+                cost_usd=0,
+                measurement_source=measurement_source,
+            )
+            store.add_experiment_event(
+                experiment_id,
+                "ready",
+                "Bootstrapped zero-cost public availability monitoring.",
+            )
+            existing.add(key)
+            created += 1
+        return created
+
     def process_observation_inbox(self):
         artifact_root = os.environ.get(
             "MA_ARTIFACT_ROOT", os.path.join(HERE, "artifacts")
@@ -711,6 +773,7 @@ class Agent:
         if self.over_budget():
             return
         store.set_meta("state", "working")
+        self.bootstrap_owned_health_checks()
         self.process_observation_inbox()
         self.monitor_experiments()
         if self.export_next_experiment() is not None:
