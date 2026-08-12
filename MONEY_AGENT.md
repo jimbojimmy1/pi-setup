@@ -208,6 +208,44 @@ A positive analytics metric can verify that experiment's declared metric. It
 does not prove a sale and is never labeled as revenue. Positive revenue still
 requires `payment_provider_readonly` or `owner_verified` evidence.
 
+### Observation inbox
+
+An approved read-only adapter can deposit the same JSON contract at:
+
+```text
+~/money-agent/artifacts/observation-inbox/incoming/
+```
+
+The producer should write to a sibling temporary file and rename it to a
+`.json` filename only after the write is complete. Each daemon tick claims at
+most 25 files before monitoring or research. Claimed files move through:
+
+```text
+observation-inbox/processing/
+observation-inbox/accepted/
+observation-inbox/rejected/
+```
+
+All four directories stay under `MA_ARTIFACT_ROOT`. Symlinks are rejected and
+never read. Accepted and rejected archives use restrictive permissions. A
+rejected archive can contain the original invalid input, so inspect it only on
+the Pi and remove it after diagnosing the producer. Logs and result summaries
+contain counts, not payload contents.
+
+### Public availability
+
+On its first tick, the daemon creates one zero-cost `AUTO_LOCAL` availability
+experiment for every valid URL in `profile.json` under `owned_projects`. It
+therefore begins checking FunnelSleuth after the updated service is installed
+and restarted; it does not wait for a model to propose the check.
+
+The check resolves the host, rejects any non-public address, connects directly
+to one validated IP with TLS hostname verification, sends one `HEAD` request,
+follows no redirects, and caps its timeout and response bytes. It records at
+most one `public_availability` observation per hour: `1` for HTTP 2xx/3xx and
+`0` for failure. That value cannot set `won` or `lost` and cannot report a sale,
+traffic, conversion, or revenue.
+
 ## FunnelSleuth blocker
 
 FunnelSleuth is the first owned project. Its current offers are a $79 audit and

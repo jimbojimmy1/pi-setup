@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-11 23:12 (America/New_York)
+Updated: 2026-08-12 17:12 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `d74daf4`
+- Latest implementation commit before this handoff update: `e4bbff7`
 - PR state checked before this update: open, draft, no checks configured
-- Remote PR head before this update: `652d387`
+- Remote PR head before this update: `038feda`
 
 ## Implemented architecture
 
@@ -47,6 +47,14 @@ impersonating the owner.
   experiment, and terminal conflicts are rejected.
 - Accepted terminal results add an event and a reusable lesson for future idea
   scoring.
+- The daemon atomically consumes up to 25 local observation files per tick,
+  archives accepted/rejected inputs under the artifact root, rejects symlinks,
+  and exposes only counts in logs.
+- Public checks use a validated direct IP, TLS hostname verification, a bounded
+  `HEAD` request, no redirects, and one availability observation per hour.
+- Each valid owned-project URL gets one deterministic zero-cost `AUTO_LOCAL`
+  availability experiment, so FunnelSleuth monitoring starts after the updated
+  daemon is installed and restarted.
 
 ## Current owned revenue project
 
@@ -58,6 +66,8 @@ impersonating the owner.
   an authenticated owner session
 - Measurement blocker: no read-only Stripe, PayPal, or analytics adapter is
   configured
+- Public availability evidence: the bounded direct-IP probe returned HTTP 200
+  on 2026-08-12; this does not verify checkout, conversion, or revenue
 
 The daemon may prepare and implement bounded owned-site experiments. It must not
 spend money, contact people, create accounts, change payment or payout settings,
@@ -76,7 +86,7 @@ Latest combined verification before this documentation update:
 - `bash -n setup-money-agent.sh`: exit 0
 - `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- `python3 -m unittest discover -s tests -v`: 30 tests passed in 0.666 seconds
+- `python3 -m unittest discover -s tests -v`: 42 tests passed in 0.947 seconds
 - `git diff --check`: exit 0 before each monitoring commit
 
 ## Commits added in this workstream
@@ -101,11 +111,16 @@ Latest combined verification before this documentation update:
 - `75ba199` plan strict local observation import
 - `f97fa69` add the strict JSON importer
 - `d74daf4` apply evidence-backed terminal outcomes
+- `038feda` hand off strict observation import
+- `6c6dd69` plan the observation inbox and health checks
+- `686011f` add the atomic observation inbox
+- `362a10d` add bounded public-health evidence
+- `be3e857` run inbox and health monitoring each tick
+- `e4bbff7` bootstrap owned-project health monitoring
 
 ## Next action
 
-Add an atomic observation inbox and bounded public-health adapter. The daemon
-may consume validated files deposited by an approved read-only adapter and may
-check the existing FunnelSleuth public URL for availability. Health evidence
-must remain separate from conversions and revenue. Do not connect financial or
-analytics accounts or request credentials without explicit owner approval.
+Add repository CI for the installer and Python suite, then expose inbox counts
+and recent availability on the dashboard. Do not connect financial or analytics
+accounts, send alerts/messages, or request credentials without explicit owner
+approval.
