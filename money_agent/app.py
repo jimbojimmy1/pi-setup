@@ -1,15 +1,72 @@
 """Dashboard for the money agent."""
 import json
 import os
+from pathlib import Path
 import time
 
 from flask import Flask, jsonify, render_template, request
 
-import store
+try:
+    from . import store
+except ImportError:  # Installed scripts also run directly on the Raspberry Pi.
+    import store
 
 app = Flask(__name__)
 DAILY_USD = float(os.environ.get("MA_DAILY_USD", "2.00") or 0)
 _ready = False
+
+PUBLIC_EXPERIMENT_FIELDS = (
+    "id",
+    "idea_id",
+    "project",
+    "action_kind",
+    "hypothesis",
+    "deliverable",
+    "metric",
+    "stop_condition",
+    "window_days",
+    "autonomy_class",
+    "status",
+    "hours",
+    "cost_usd",
+    "created_at",
+    "updated_at",
+)
+
+
+def _next_work():
+    root = Path(
+        os.environ.get("MA_ARTIFACT_ROOT", Path(__file__).resolve().parent / "artifacts")
+    ).resolve()
+    path = root / "next-work.json"
+    try:
+        if path.stat().st_size > 256_000:
+            return None
+        value = json.loads(path.read_text(encoding="utf-8"))
+        return value if isinstance(value, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def _owner_blockers(experiments):
+    blockers = [
+        {
+            "project": "FunnelSleuth",
+            "action": "Connect the existing Stripe or PayPal checkout link.",
+            "reason": "This requires an owner-authenticated payment account session.",
+        }
+    ]
+    blockers.extend(
+        {
+            "project": item["project"],
+            "action": item["deliverable"],
+            "reason": "Policy classified this experiment as OWNER_REQUIRED.",
+        }
+        for item in experiments
+        if item["autonomy_class"] == "OWNER_REQUIRED"
+        and item["status"] not in ("won", "lost")
+    )
+    return blockers
 
 
 @app.before_request
@@ -42,6 +99,10 @@ def index():
 def api_state():
     spent, calls = store.spend_today()
     c = store.counts()
+    experiments = [
+        {key: item[key] for key in PUBLIC_EXPERIMENT_FIELDS}
+        for item in store.list_experiments()
+    ]
     return jsonify(
         {
             "state": store.get_meta("state", "starting"),
@@ -59,6 +120,9 @@ def api_state():
             "counts": c,
             "leaderboard": store.leaderboard(),
             "actions": store.action_queue(),
+            "experiments": experiments,
+            "next_work": _next_work(),
+            "owner_blockers": _owner_blockers(experiments),
             "recent": [
                 {
                     "id": r["id"],

@@ -74,6 +74,23 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid rgba(212,160,23,.25
 
 <div class="grid">
   <div class="panel">
+    <h2>▸ ACTIVE EXPERIMENTS</h2>
+    <div id="experiments"><span class="muted">none yet</span></div>
+  </div>
+
+  <div class="panel">
+    <h2>▸ NEXT AUTOMATED WORK</h2>
+    <div id="nextwork" class="muted">no work package exported</div>
+  </div>
+
+  <div class="panel">
+    <h2>▸ OWNER-REQUIRED BLOCKERS</h2>
+    <div id="blockers" class="muted">none</div>
+  </div>
+</div>
+
+<div class="grid">
+  <div class="panel">
     <h2>▸ LEADERBOARD</h2>
     <table><thead><tr><th>score</th><th>idea</th><th>$/mo</th><th>state</th></tr></thead>
     <tbody id="board"></tbody></table>
@@ -98,8 +115,8 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid rgba(212,160,23,.25
 
 <footer class="muted">
   Two agents argue, a judge rules, survivors recurse into sharper sub-questions.
-  This engine finds, stress-tests and ranks plays — it does not transact, spend or
-  earn on its own. The action queue is where you come in.
+  This engine finds, stress-tests and ranks plays, then exports bounded work on
+  owned projects. It never transacts, spends, or changes payment settings.
 </footer>
 
 <div id="modal"><div class="inner">
@@ -133,6 +150,21 @@ async function poll(){
         <div class="meta">${a.hours}h · $${a.cost_usd} · from “${esc(a.title)}” (score ${a.best_score})</div>
       </div>
     </div>`).join('') : '<span class="muted">no actions yet — the agents are still arguing</span>';
+
+  document.getElementById('experiments').innerHTML = d.experiments.length ? d.experiments.map(x=>`
+    <div class="act"><div>
+      <div><span class="pill ${esc(x.status)}">${esc(x.status)}</span> ${esc(x.project)} — ${esc(x.deliverable)}</div>
+      <div class="meta">${esc(x.autonomy_class)} · ${x.hours}h · $${x.cost_usd} · ${x.window_days}d · metric: ${esc(x.metric)}</div>
+    </div></div>`).join('') : '<span class="muted">no experiments yet</span>';
+
+  document.getElementById('nextwork').innerHTML = d.next_work
+    ? `<div>${esc(d.next_work.next_action || d.next_work.deliverable || 'Review work package')}</div>
+       <div class="meta">${esc(d.next_work.project || 'unassigned')} · ${esc(d.next_work.autonomy_class || '')}</div>`
+    : 'no work package exported';
+
+  document.getElementById('blockers').innerHTML = d.owner_blockers.length
+    ? d.owner_blockers.map(b=>`<div style="margin-bottom:8px">— ${esc(b.project)}: ${esc(b.action)}<br><span class="meta">${esc(b.reason)}</span></div>`).join('')
+    : 'none';
 
   document.getElementById('board').innerHTML = d.leaderboard.map(i=>`
     <tr class="clickable" onclick="openIdea(${i.id})">
