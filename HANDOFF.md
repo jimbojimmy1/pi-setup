@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-11 (America/New_York)
+Updated: 2026-08-11 21:11 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Local HEAD before this handoff commit: `ae8eb2f`
-- PR state checked before push: open, draft, mergeable, no checks configured
-- Remote PR head before push: `6411420`
+- Latest implementation commit before this handoff update: `96d8214`
+- PR state checked before this update: open, draft, no checks configured
+- Remote PR head before this update: `2404038`
 
 ## Implemented architecture
 
@@ -31,6 +31,8 @@ impersonating the owner.
   without exposing environment credentials.
 - The default profile prioritizes the existing FunnelSleuth project and assumes
   zero startup spend.
+- The installer stages and validates canonical versioned source, preserves
+  operator files and data, and defaults API spending to zero.
 
 ## Current owned revenue project
 
@@ -53,8 +55,13 @@ Run from the repository root in Git Bash:
 python3 -m unittest discover -s tests -v
 ```
 
-Latest result: 11 tests passed in 0.398 seconds. `git diff --check` passed before
-each feature commit.
+Latest combined verification before this documentation update:
+
+- `bash -n setup-money-agent.sh`: exit 0
+- `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
+  preservation checks passed twice
+- `python3 -m unittest discover -s tests -v`: 11 tests passed in 0.738 seconds
+- `git diff --check`: exit 0 before the installer commit
 
 ## Commits added in this workstream
 
@@ -66,11 +73,12 @@ each feature commit.
 - `52355e6` policy-check and atomically export handoffs
 - `0d4021d` convert promoted owned-project ideas into experiments
 - `ae8eb2f` show experiments and blockers on the dashboard
+- `2404038` add the durable interim handoff
+- `96d8214` replace the embedded installer with the canonical source installer
 
 ## Next action
 
-Rewrite `setup-money-agent.sh` to install the canonical versioned runtime,
-including `experiments.py` and `profile.json`, while preserving an existing
-`config.env`, database, and customized profile. Add an installer smoke test
-before changing the script. Then run the full suite, inspect the generated Pi
-installation, and update this handoff and the draft PR description.
+Add bounded public monitoring and result ingestion. Experiments without a
+configured, trustworthy measurement source must become `blocked`; observed
+events may move them to `measuring`, `won`, or `lost`. Never infer a conversion
+or revenue amount from traffic alone.

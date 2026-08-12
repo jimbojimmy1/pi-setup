@@ -1,0 +1,146 @@
+# Money Agent operator guide
+
+Money Agent runs a BULL/BEAR/JUDGE research loop on a Raspberry Pi. Promoted
+ideas become bounded experiments for projects you already own. The service can
+write a redacted work package for Codex; it cannot spend money, contact people,
+open accounts, or alter payment settings.
+
+It does not guarantee revenue. Record earnings only after a payment provider or
+bank confirms them.
+
+## Install on a Raspberry Pi
+
+Clone the repository and run the installer:
+
+```bash
+git clone https://github.com/jimbojimmy1/pi-setup.git
+cd pi-setup
+sudo true
+bash setup-money-agent.sh
+```
+
+The default application directory is `~/money-agent`. The installer validates
+all Python, JSON, and template files before replacing runtime code. It preserves
+an existing `config.env`, `profile.json`, `money.db`, and `artifacts/` directory.
+
+Open `http://PI_ADDRESS:8086` after installation. Check service state with:
+
+```bash
+systemctl status money-agent money-agent-web
+journalctl -u money-agent -f
+```
+
+API spending starts disabled (`MA_DAILY_USD=0.00`). A configured API key cannot
+incur agent usage while that cap remains zero. The Claude CLI and dry-run
+backends remain available without an API key.
+
+## Test without installing services
+
+Use a temporary or explicit application directory:
+
+```bash
+MONEY_AGENT_DIR=/tmp/money-agent-test \
+MA_SKIP_APT=1 \
+MA_SKIP_SYSTEMD=1 \
+bash setup-money-agent.sh
+```
+
+This mode writes no systemd units and starts no daemons.
+
+## Upgrade
+
+For a cloned installation:
+
+```bash
+cd pi-setup
+git pull --ff-only
+bash setup-money-agent.sh
+```
+
+For a standalone copy of the installer, pin the source files to a commit:
+
+```bash
+MA_RELEASE_REF=COMMIT_SHA bash setup-money-agent.sh
+```
+
+The standalone path downloads every required file from that exact ref into a
+temporary staging directory. A missing or invalid file stops the upgrade before
+runtime files are replaced.
+
+## Roll back
+
+Find the last known-good commit, then reinstall its runtime:
+
+```bash
+MA_RELEASE_REF=LAST_GOOD_COMMIT bash setup-money-agent.sh
+sudo systemctl restart money-agent money-agent-web
+```
+
+The SQLite migrations are additive. The installer does not delete or replace
+`money.db`. Copy the application directory before a manual database change:
+
+```bash
+cp -a ~/money-agent ~/money-agent.backup
+```
+
+## Configuration
+
+The installer creates `~/money-agent/config.env` once. Later runs leave it
+unchanged.
+
+| Setting | Default | Purpose |
+| --- | ---: | --- |
+| `ANTHROPIC_API_KEY` | empty | Enables the Anthropic API backend. Treat it as a secret. |
+| `MA_DAILY_USD` | `0.00` | Stops API-backed work at the UTC daily cap. |
+| `MA_TICK_SECONDS` | `900` | Seconds between daemon cycles. |
+| `MA_HORIZON` | `fast` | Favors speed to a first verified payment. |
+| `MA_MAX_ROUNDS` | `4` | Iterations allowed per idea. |
+| `MA_MAX_DEPTH` | `2` | Maximum child-question depth. |
+| `MA_CHILD_FANOUT` | `2` | Child questions created by a promoted idea. |
+| `MA_MAX_OPEN` | `12` | Open-idea limit before seeding stops. |
+| `MA_PROMOTE_AT` | `72` | Score required for promotion. |
+| `MA_KILL_AT` | `35` | Scores below this value kill an idea. |
+| `MA_ARTIFACT_ROOT` | `~/money-agent/artifacts` | Destination for automation handoffs. |
+
+Edit `profile.json` to change the operator constraints or owned projects. The
+installer never overwrites a customized profile.
+
+## Experiment permissions
+
+- `AUTO_LOCAL`: local files, deterministic transforms, tests, public health
+  checks, and read-only public analysis.
+- `CODEX_REVIEWED`: repository edits, draft pull requests, and changes to sites
+  the operator owns. Codex verifies the diff and keeps rollback available.
+- `OWNER_REQUIRED`: spending, outreach, account creation, identity or legal
+  acceptance, secrets, and payment or payout settings.
+- `REJECTED`: spam, deception, credential theft, prohibited scraping, or other
+  unsafe work.
+
+Unknown action types are `OWNER_REQUIRED`. The policy code calculates the class;
+it ignores any permission class proposed by a model.
+
+## Handoff files
+
+The daemon claims one ready experiment before researching a new idea and writes:
+
+- `~/money-agent/artifacts/next-work.json`
+- `~/money-agent/artifacts/HANDOFF.md`
+
+Both files are written through sibling temporary files and renamed into place.
+Keys that look like credentials are removed before serialization.
+
+The recurring Codex task reads the repository handoff, works only inside the
+authorized repository or owned site, verifies changes, updates the handoff, and
+keeps the draft pull request recoverable. A heartbeat is not permission to
+spend, send messages, create accounts, or make payment changes.
+
+## FunnelSleuth blocker
+
+FunnelSleuth is the first owned project. Its current offers are a $79 audit and
+a $299 Fix Sprint. Checkout still needs one owner-authenticated action: create
+or select an existing Stripe or PayPal payment link and connect it to the site.
+The agent may display this blocker but cannot complete it or request credentials.
+
+Automatic result collection is not yet implemented. Until a trusted analytics
+or payment event source is configured, treat experiment outcomes and revenue as
+unverified.
