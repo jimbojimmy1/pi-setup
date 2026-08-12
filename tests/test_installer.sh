@@ -10,7 +10,7 @@ MONEY_AGENT_DIR="$app" MA_SKIP_APT=1 MA_SKIP_SYSTEMD=1 \
   bash "$root/setup-money-agent.sh"
 
 for file in \
-  store.py llm.py agent.py experiments.py monitoring.py import_observation.py app.py profile.json templates/index.html
+  store.py llm.py agent.py experiments.py monitoring.py import_observation.py inbox.py app.py profile.json templates/index.html
 do
   cmp "$root/money_agent/$file" "$app/$file"
 done

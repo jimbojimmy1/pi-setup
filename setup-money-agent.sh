@@ -17,6 +17,7 @@ REQUIRED_FILES=(
   experiments.py
   monitoring.py
   import_observation.py
+  inbox.py
   app.py
   profile.json
   templates/index.html
