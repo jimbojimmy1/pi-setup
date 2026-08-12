@@ -140,8 +140,6 @@ def main(
         return 2
     try:
         payload = parse_payload(_read_source(args[0], input_stream))
-        if payload["outcome"] is not None or payload["window_complete"]:
-            raise ImportError("terminal outcome import is not enabled")
         store.init()
         observation = ingest_observation(
             experiment_id=payload["experiment_id"],
@@ -151,6 +149,8 @@ def main(
             evidence_ref=payload["evidence_ref"],
             observed_at=payload["observed_at"],
             revenue_usd=payload["revenue_usd"],
+            outcome=payload["outcome"],
+            window_complete=payload["window_complete"],
         )
         experiment = store.get_experiment(payload["experiment_id"])
     except (ImportError, MonitoringError, OSError, UnicodeError):

@@ -132,6 +132,100 @@ class MonitoringTest(unittest.TestCase):
                     observed_at=1000,
                 )
 
+    def test_positive_metric_can_mark_a_non_health_experiment_won(self):
+        from money_agent.monitoring import ingest_observation
+
+        experiment_id = self.add_experiment()
+
+        ingest_observation(
+            experiment_id=experiment_id,
+            source_kind="analytics_readonly",
+            metric="qualified runs",
+            value=4,
+            evidence_ref="analytics:won-4",
+            observed_at=1000,
+            outcome="won",
+        )
+
+        self.assertEqual(self.store.get_experiment(experiment_id)["status"], "won")
+        self.assertEqual(
+            [event["event_type"] for event in self.store.experiment_events(experiment_id)][-1],
+            "won",
+        )
+        self.assertTrue(self.store.lessons())
+
+    def test_lost_requires_completed_window_and_no_payment(self):
+        from money_agent.monitoring import MonitoringError, ingest_observation
+
+        experiment_id = self.add_experiment()
+        base = {
+            "experiment_id": experiment_id,
+            "source_kind": "analytics_readonly",
+            "metric": "qualified runs",
+            "value": 0,
+            "evidence_ref": "analytics:window-end",
+            "observed_at": 1000,
+            "outcome": "lost",
+        }
+        with self.assertRaises(MonitoringError):
+            ingest_observation(**base)
+
+        ingest_observation(**base, window_complete=True)
+
+        self.assertEqual(self.store.get_experiment(experiment_id)["status"], "lost")
+
+    def test_terminal_outcome_requires_positive_evidence_and_cannot_conflict(self):
+        from money_agent.monitoring import MonitoringError, ingest_observation
+
+        experiment_id = self.add_experiment()
+        with self.assertRaises(MonitoringError):
+            ingest_observation(
+                experiment_id=experiment_id,
+                source_kind="analytics_readonly",
+                metric="qualified runs",
+                value=0,
+                evidence_ref="analytics:zero-win",
+                observed_at=1000,
+                outcome="won",
+            )
+        ingest_observation(
+            experiment_id=experiment_id,
+            source_kind="analytics_readonly",
+            metric="qualified runs",
+            value=2,
+            evidence_ref="analytics:win",
+            observed_at=1001,
+            outcome="won",
+        )
+        with self.assertRaises(MonitoringError):
+            ingest_observation(
+                experiment_id=experiment_id,
+                source_kind="analytics_readonly",
+                metric="qualified runs",
+                value=0,
+                evidence_ref="analytics:conflict",
+                observed_at=1002,
+                outcome="lost",
+                window_complete=True,
+            )
+
+    def test_public_health_cannot_create_terminal_outcomes(self):
+        from money_agent.monitoring import MonitoringError, ingest_observation
+
+        experiment_id = self.add_experiment(
+            measurement_source="public_http:https://example.com/health"
+        )
+        with self.assertRaises(MonitoringError):
+            ingest_observation(
+                experiment_id=experiment_id,
+                source_kind="public_http",
+                metric="qualified runs",
+                value=1,
+                evidence_ref="health:200",
+                observed_at=1000,
+                outcome="won",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

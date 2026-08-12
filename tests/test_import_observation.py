@@ -130,6 +130,26 @@ class ObservationImportTest(unittest.TestCase):
         self.assertNotIn(secret, stderr.getvalue())
         self.assertEqual(stdout.getvalue(), "")
 
+    def test_cli_applies_an_evidence_backed_terminal_outcome(self):
+        from money_agent.import_observation import main
+
+        payload = {
+            **self.valid_payload(),
+            "value": 2,
+            "evidence_ref": "analytics:won",
+            "outcome": "won",
+        }
+        stdout = StringIO()
+        code = main(
+            ["-"],
+            input_stream=StringIO(json.dumps(payload)),
+            output_stream=stdout,
+            error_stream=StringIO(),
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "won")
+
 
 if __name__ == "__main__":
     unittest.main()

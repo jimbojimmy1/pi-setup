@@ -120,6 +120,8 @@ def ingest_observation(
     evidence_ref: str,
     observed_at: float | None = None,
     revenue_usd: float = 0,
+    outcome: str | None = None,
+    window_complete: bool = False,
 ) -> dict:
     """Record explicit evidence without inferring sales from unrelated metrics."""
     experiment = store.get_experiment(experiment_id)
@@ -146,6 +148,30 @@ def ingest_observation(
         raise MonitoringError("revenue requires payment-provider or owner evidence")
     if source_kind == "public_http" and numeric_revenue != 0:
         raise MonitoringError("public health evidence cannot report revenue")
+    if outcome not in (None, "measuring", "won", "lost"):
+        raise MonitoringError("outcome must be measuring, won, lost, or null")
+    if not isinstance(window_complete, bool):
+        raise MonitoringError("window_complete must be boolean")
+    target_status = outcome if outcome in TERMINAL_STATUSES else "measuring"
+    if target_status in TERMINAL_STATUSES and source_kind == "public_http":
+        raise MonitoringError("public health evidence cannot close an experiment")
+    if target_status == "won" and numeric_value <= 0 and numeric_revenue <= 0:
+        raise MonitoringError("won requires a positive verified metric or payment")
+    if target_status == "lost":
+        if not window_complete:
+            raise MonitoringError("lost requires a completed measurement window")
+        if numeric_revenue > 0:
+            raise MonitoringError("an experiment with an observed payment cannot be lost")
+    elif window_complete:
+        raise MonitoringError("window_complete is valid only with a lost outcome")
+
+    current_status = experiment["status"]
+    if (
+        current_status in TERMINAL_STATUSES
+        and target_status in TERMINAL_STATUSES
+        and target_status != current_status
+    ):
+        raise MonitoringError("terminal experiment outcomes cannot conflict")
 
     existing = next(
         (
@@ -171,9 +197,24 @@ def ingest_observation(
     detail = f"Verified {metric}: {numeric_value:g} from {source_kind}."
     if numeric_revenue > 0:
         detail += f" Observed payment amount: ${numeric_revenue:.2f}."
-    if experiment["status"] not in TERMINAL_STATUSES:
-        store.update_experiment_status(experiment_id, "measuring", result=detail)
+    if current_status not in TERMINAL_STATUSES:
+        store.update_experiment_status(experiment_id, target_status, result=detail)
     store.add_experiment_event(experiment_id, "observation", detail)
+    if target_status in TERMINAL_STATUSES and current_status != target_status:
+        store.add_experiment_event(experiment_id, target_status, detail)
+        if target_status == "won":
+            lesson = (
+                f"Verified experiment win for {experiment['project']}: "
+                f"{metric} reached {numeric_value:g}; preserve the tested "
+                "mechanism before changing it."
+            )
+        else:
+            lesson = (
+                f"Completed experiment loss for {experiment['project']}: "
+                f"{metric} ended at {numeric_value:g}; do not repeat the same "
+                "hypothesis without new evidence."
+            )
+        store.add_lesson(experiment["idea_id"], experiment["project"], lesson)
     return next(
         observation
         for observation in store.list_observations(experiment_id)
