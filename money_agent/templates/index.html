@@ -92,6 +92,16 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid rgba(212,160,23,.25
     <h2>▸ VERIFIED OBSERVATIONS</h2>
     <div id="observations" class="muted">none</div>
   </div>
+
+  <div class="panel">
+    <h2>▸ INBOX EVIDENCE</h2>
+    <div id="inbox" class="muted">loading counts…</div>
+  </div>
+
+  <div class="panel">
+    <h2>▸ PUBLIC AVAILABILITY</h2>
+    <div id="availability" class="muted">no availability evidence</div>
+  </div>
 </div>
 
 <div class="grid">
@@ -175,6 +185,13 @@ async function poll(){
     ? d.observations.map(o=>`<div style="margin-bottom:8px">— ${esc(o.metric)}: ${o.value}
         <span class="meta">${esc(o.source_kind)}${o.revenue_usd>0?' · observed payment $'+o.revenue_usd.toFixed(2):''}</span></div>`).join('')
     : 'none';
+
+  document.getElementById('inbox').textContent =
+    `incoming ${d.inbox.incoming} · processing ${d.inbox.processing} · accepted ${d.inbox.accepted} · rejected ${d.inbox.rejected}`;
+
+  document.getElementById('availability').innerHTML = d.availability
+    ? `<span class="dot ${d.availability.available?'':'bad'}"></span>${d.availability.available?'available':'unavailable'} · checked ${esc(d.availability.age)}`
+    : 'no availability evidence';
 
   document.getElementById('board').innerHTML = d.leaderboard.map(i=>`
     <tr class="clickable" onclick="openIdea(${i.id})">

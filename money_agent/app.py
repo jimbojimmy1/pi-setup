@@ -45,11 +45,14 @@ PUBLIC_OBSERVATION_FIELDS = (
 )
 
 
-def _next_work():
-    root = Path(
+def _artifact_root():
+    return Path(
         os.environ.get("MA_ARTIFACT_ROOT", Path(__file__).resolve().parent / "artifacts")
     ).resolve()
-    path = root / "next-work.json"
+
+
+def _next_work():
+    path = _artifact_root() / "next-work.json"
     try:
         if path.stat().st_size > 256_000:
             return None
@@ -57,6 +60,36 @@ def _next_work():
         return value if isinstance(value, dict) else None
     except (OSError, ValueError):
         return None
+
+
+def _inbox_counts():
+    inbox = _artifact_root() / "observation-inbox"
+    counts = {}
+    for name in ("incoming", "processing", "accepted", "rejected"):
+        try:
+            counts[name] = sum(
+                1
+                for entry in os.scandir(inbox / name)
+                if entry.name.endswith(".json") and entry.is_file(follow_symlinks=False)
+            )
+        except OSError:
+            counts[name] = 0
+    return counts
+
+
+def _latest_availability(observations):
+    for item in observations:
+        if (
+            item["source_kind"] == "public_http"
+            and item["metric"] == "public_availability"
+        ):
+            observed_at = float(item["observed_at"])
+            return {
+                "available": float(item["value"]) > 0,
+                "observed_at": observed_at,
+                "age": ago(observed_at),
+            }
+    return None
 
 
 def _owner_blockers(experiments):
@@ -146,6 +179,8 @@ def api_state():
             "actions": store.action_queue(),
             "experiments": experiments,
             "observations": observations,
+            "inbox": _inbox_counts(),
+            "availability": _latest_availability(observations),
             "next_work": _next_work(),
             "owner_blockers": _owner_blockers(experiments),
             "recent": [

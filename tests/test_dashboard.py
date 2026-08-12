@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 class DashboardStateTest(unittest.TestCase):
@@ -71,6 +72,64 @@ class DashboardStateTest(unittest.TestCase):
         self.assertEqual(payload["observations"][0]["source_kind"], "analytics_readonly")
         self.assertNotIn("evidence_ref", payload["observations"][0])
         self.assertNotIn("must-not-appear", response.get_data(as_text=True))
+
+    def test_state_exposes_inbox_counts_and_latest_availability_without_file_details(self):
+        artifacts = self.root / "artifacts"
+        inbox = artifacts / "observation-inbox"
+        for name in ("incoming", "processing", "accepted", "rejected"):
+            directory = inbox / name
+            directory.mkdir(parents=True)
+            (directory / f"secret-{name}.json").write_text(
+                '{"private_payload":"must-not-appear"}', encoding="utf-8"
+            )
+        (inbox / "incoming" / "ignored.tmp").write_text("partial", encoding="utf-8")
+
+        experiment_id = self.store.list_experiments()[0]["id"]
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="public_availability",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="public-health:private-ref",
+            observed_at=1500,
+        )
+
+        import money_agent.app as app_module
+
+        app_module = importlib.reload(app_module)
+        with patch.object(app_module.time, "time", return_value=2100):
+            response = app_module.app.test_client().get("/api/state")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(
+            payload["inbox"],
+            {"incoming": 1, "processing": 1, "accepted": 1, "rejected": 1},
+        )
+        self.assertEqual(
+            payload["availability"],
+            {"available": True, "observed_at": 1500.0, "age": "10m ago"},
+        )
+        body = response.get_data(as_text=True)
+        self.assertNotIn("secret-incoming.json", body)
+        self.assertNotIn("must-not-appear", body)
+        self.assertNotIn("private-ref", body)
+
+    def test_template_renders_inbox_and_availability_summaries(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "money_agent"
+            / "templates"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("INBOX EVIDENCE", template)
+        for name in ("incoming", "processing", "accepted", "rejected"):
+            self.assertIn(f"d.inbox.{name}", template)
+        self.assertIn("PUBLIC AVAILABILITY", template)
+        self.assertIn("available", template)
+        self.assertIn("unavailable", template)
 
 
 if __name__ == "__main__":
