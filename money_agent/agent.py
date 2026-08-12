@@ -14,9 +14,12 @@ import time
 try:
     from . import llm, store
     from .experiments import classify_action, export_work_package
+    from .inbox import process_inbox
     from .monitoring import (
         ALLOWED_SOURCES,
         MonitoringError,
+        collect_public_health,
+        configured_source_kind,
         monitor_experiment,
         validate_public_https_url,
     )
@@ -24,9 +27,12 @@ except ImportError:  # Installed scripts also run directly on the Raspberry Pi.
     import llm
     import store
     from experiments import classify_action, export_work_package
+    from inbox import process_inbox
     from monitoring import (
         ALLOWED_SOURCES,
         MonitoringError,
+        collect_public_health,
+        configured_source_kind,
         monitor_experiment,
         validate_public_https_url,
     )
@@ -601,9 +607,47 @@ class Agent:
         for experiment in store.list_experiments():
             if experiment["status"] in ("won", "lost"):
                 continue
-            monitor_experiment(experiment["id"])
+            validated = monitor_experiment(experiment["id"])
+            if (
+                configured_source_kind(experiment["measurement_source"])
+                == "public_http"
+                and validated["status"] != "blocked"
+            ):
+                try:
+                    collect_public_health(experiment["id"])
+                except MonitoringError:
+                    detail = "Public health evidence configuration was rejected."
+                    store.update_experiment_status(
+                        experiment["id"], "blocked", result=detail
+                    )
+                    store.add_experiment_event(experiment["id"], "blocked", detail)
             monitored += 1
         return monitored
+
+    def process_observation_inbox(self):
+        artifact_root = os.environ.get(
+            "MA_ARTIFACT_ROOT", os.path.join(HERE, "artifacts")
+        )
+        try:
+            result = process_inbox(artifact_root, limit=25)
+        except Exception as exc:
+            detail = f"{type(exc).__name__}: observation inbox processing failed"
+            store.set_meta("inbox_error", detail)
+            log(detail)
+            return {
+                "accepted": 0,
+                "rejected": 0,
+                "remaining": 0,
+                "error": True,
+            }
+        store.set_meta("inbox_error", "")
+        if result["accepted"] or result["rejected"]:
+            log(
+                "observation inbox: "
+                f"{result['accepted']} accepted, {result['rejected']} rejected, "
+                f"{result['remaining']} remaining"
+            )
+        return result
 
     def export_next_experiment(self):
         store.recover_stale_experiments()
@@ -667,6 +711,7 @@ class Agent:
         if self.over_budget():
             return
         store.set_meta("state", "working")
+        self.process_observation_inbox()
         self.monitor_experiments()
         if self.export_next_experiment() is not None:
             return

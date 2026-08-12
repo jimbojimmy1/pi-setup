@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 class AgentExperimentTest(unittest.TestCase):
@@ -124,6 +125,82 @@ class AgentExperimentTest(unittest.TestCase):
         self.assertEqual(
             self.store.get_experiment(experiment_id)["status"], "blocked"
         )
+
+    def test_tick_processes_inbox_then_monitoring_before_export(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        calls = []
+
+        agent.over_budget = lambda: False
+        agent.process_observation_inbox = lambda: calls.append("inbox")
+        agent.monitor_experiments = lambda: calls.append("monitor")
+        agent.export_next_experiment = lambda: calls.append("export") or {"id": 1}
+        agent.unit = lambda: calls.append("research")
+
+        agent.tick()
+
+        self.assertEqual(calls, ["inbox", "monitor", "export"])
+
+    def test_monitoring_collects_public_health_for_health_sources(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        idea_id = self.store.add_idea("FunnelSleuth health")
+        experiment_id = self.store.add_experiment(
+            idea_id=idea_id,
+            project="FunnelSleuth",
+            action_kind="public_health_check",
+            hypothesis="The public page remains reachable.",
+            deliverable="Check the public page.",
+            metric="public_availability",
+            stop_condition="Escalate repeated failures.",
+            window_days=30,
+            autonomy_class="AUTO_LOCAL",
+            hours=0,
+            cost_usd=0,
+            measurement_source="public_http:https://example.com/health",
+        )
+
+        with patch.object(agent_module, "monitor_experiment") as validate:
+            with patch.object(agent_module, "collect_public_health") as collect:
+                monitored = agent.monitor_experiments()
+
+        self.assertEqual(monitored, 1)
+        validate.assert_called_once_with(experiment_id)
+        collect.assert_called_once_with(experiment_id)
+
+    def test_inbox_uses_configured_artifact_root_and_bound(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        expected = self.root / "artifacts"
+
+        with patch.object(agent_module, "process_inbox") as process:
+            process.return_value = {"accepted": 0, "rejected": 0, "remaining": 0}
+            result = agent.process_observation_inbox()
+
+        self.assertEqual(result["accepted"], 0)
+        process.assert_called_once_with(str(expected), limit=25)
+
+    def test_inbox_failure_is_recorded_without_killing_tick_or_leaking_detail(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+
+        with patch.object(
+            agent_module, "process_inbox", side_effect=OSError("secret-file-name")
+        ), patch.object(agent_module, "log"):
+            result = agent.process_observation_inbox()
+
+        self.assertTrue(result["error"])
+        recorded = self.store.get_meta("inbox_error", "")
+        self.assertIn("OSError", recorded)
+        self.assertNotIn("secret-file-name", recorded)
 
 
 if __name__ == "__main__":
