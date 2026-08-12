@@ -87,6 +87,11 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid rgba(212,160,23,.25
     <h2>▸ OWNER-REQUIRED BLOCKERS</h2>
     <div id="blockers" class="muted">none</div>
   </div>
+
+  <div class="panel">
+    <h2>▸ VERIFIED OBSERVATIONS</h2>
+    <div id="observations" class="muted">none</div>
+  </div>
 </div>
 
 <div class="grid">
@@ -164,6 +169,11 @@ async function poll(){
 
   document.getElementById('blockers').innerHTML = d.owner_blockers.length
     ? d.owner_blockers.map(b=>`<div style="margin-bottom:8px">— ${esc(b.project)}: ${esc(b.action)}<br><span class="meta">${esc(b.reason)}</span></div>`).join('')
+    : 'none';
+
+  document.getElementById('observations').innerHTML = d.observations.length
+    ? d.observations.map(o=>`<div style="margin-bottom:8px">— ${esc(o.metric)}: ${o.value}
+        <span class="meta">${esc(o.source_kind)}${o.revenue_usd>0?' · observed payment $'+o.revenue_usd.toFixed(2):''}</span></div>`).join('')
     : 'none';
 
   document.getElementById('board').innerHTML = d.leaderboard.map(i=>`

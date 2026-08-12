@@ -15,6 +15,7 @@ REQUIRED_FILES=(
   llm.py
   agent.py
   experiments.py
+  monitoring.py
   app.py
   profile.json
   templates/index.html

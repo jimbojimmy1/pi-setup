@@ -31,6 +31,17 @@ class DashboardStateTest(unittest.TestCase):
             autonomy_class="CODEX_REVIEWED",
             hours=2,
             cost_usd=0,
+            measurement_source="analytics_readonly",
+        )
+        experiment_id = self.store.list_experiments()[0]["id"]
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="analytics_readonly",
+            metric="qualified runs in FunnelSleuth analytics",
+            value=2,
+            revenue_usd=0,
+            evidence_ref="analytics:2",
+            observed_at=1000,
         )
         artifacts = self.root / "artifacts"
         artifacts.mkdir()
@@ -57,6 +68,8 @@ class DashboardStateTest(unittest.TestCase):
         self.assertEqual(payload["experiments"][0]["project"], "FunnelSleuth")
         self.assertEqual(payload["next_work"]["next_action"], "Build page")
         self.assertTrue(payload["owner_blockers"])
+        self.assertEqual(payload["observations"][0]["source_kind"], "analytics_readonly")
+        self.assertNotIn("evidence_ref", payload["observations"][0])
         self.assertNotIn("must-not-appear", response.get_data(as_text=True))
 
 

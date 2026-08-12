@@ -12,6 +12,7 @@ class AgentExperimentTest(unittest.TestCase):
         self.root = Path(self.tmp.name)
         os.environ["MA_DB"] = str(self.root / "money.db")
         os.environ["MA_ARTIFACT_ROOT"] = str(self.root / "artifacts")
+        os.environ["MA_TRUSTED_MEASUREMENT_SOURCES"] = "analytics_readonly"
 
         import money_agent.store as store
 
@@ -22,6 +23,7 @@ class AgentExperimentTest(unittest.TestCase):
         self.store.close_connection()
         os.environ.pop("MA_DB", None)
         os.environ.pop("MA_ARTIFACT_ROOT", None)
+        os.environ.pop("MA_TRUSTED_MEASUREMENT_SOURCES", None)
         self.tmp.cleanup()
 
     def promoted_judge(self):
@@ -36,6 +38,7 @@ class AgentExperimentTest(unittest.TestCase):
                 ),
                 "deliverable": "Create one evidence-led roofer audit page.",
                 "metric": "qualified_snapshot_runs from FunnelSleuth analytics",
+                "measurement_source": "analytics_readonly",
                 "window_days": 30,
                 "hours": 2,
                 "cost_usd": 0,
@@ -61,6 +64,9 @@ class AgentExperimentTest(unittest.TestCase):
         experiments = self.store.list_experiments()
         self.assertEqual(len(experiments), 1)
         self.assertEqual(experiments[0]["autonomy_class"], "CODEX_REVIEWED")
+        self.assertEqual(
+            experiments[0]["measurement_source"], "analytics_readonly"
+        )
 
         exported = agent.export_next_experiment()
 
@@ -70,6 +76,7 @@ class AgentExperimentTest(unittest.TestCase):
         )
         self.assertEqual(payload["project"], "FunnelSleuth")
         self.assertEqual(payload["autonomy_class"], "CODEX_REVIEWED")
+        self.assertEqual(payload["measurement_source"], "analytics_readonly")
         self.assertIn("stop_condition", payload)
 
     def test_non_promoted_or_invalid_experiment_is_not_persisted(self):
@@ -87,6 +94,36 @@ class AgentExperimentTest(unittest.TestCase):
         judge["experiment"]["metric"] = ""
         self.assertIsNone(agent.persist_experiment(idea_id, judge))
         self.assertEqual(self.store.list_experiments(), [])
+
+    def test_model_cannot_self_authorize_a_measurement_source(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        idea_id = self.store.add_idea("Unconfigured analytics")
+        os.environ.pop("MA_TRUSTED_MEASUREMENT_SOURCES", None)
+
+        experiment_id = agent.persist_experiment(idea_id, self.promoted_judge())
+
+        experiment = self.store.get_experiment(experiment_id)
+        self.assertEqual(experiment["measurement_source"], "")
+
+    def test_monitoring_blocks_unmeasurable_work_before_more_research(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        idea_id = self.store.add_idea("No source")
+        judge = self.promoted_judge()
+        judge["experiment"]["measurement_source"] = ""
+        experiment_id = agent.persist_experiment(idea_id, judge)
+
+        monitored = agent.monitor_experiments()
+
+        self.assertEqual(monitored, 1)
+        self.assertEqual(
+            self.store.get_experiment(experiment_id)["status"], "blocked"
+        )
 
 
 if __name__ == "__main__":

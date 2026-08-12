@@ -23,14 +23,25 @@ PUBLIC_EXPERIMENT_FIELDS = (
     "hypothesis",
     "deliverable",
     "metric",
+    "measurement_source",
     "stop_condition",
     "window_days",
     "autonomy_class",
     "status",
+    "result",
     "hours",
     "cost_usd",
     "created_at",
     "updated_at",
+)
+PUBLIC_OBSERVATION_FIELDS = (
+    "id",
+    "experiment_id",
+    "source_kind",
+    "metric",
+    "value",
+    "revenue_usd",
+    "observed_at",
 )
 
 
@@ -65,6 +76,15 @@ def _owner_blockers(experiments):
         for item in experiments
         if item["autonomy_class"] == "OWNER_REQUIRED"
         and item["status"] not in ("won", "lost")
+    )
+    blockers.extend(
+        {
+            "project": item["project"],
+            "action": "Configure a trustworthy read-only measurement source.",
+            "reason": item["result"] or "Measurement is blocked.",
+        }
+        for item in experiments
+        if item["status"] == "blocked"
     )
     return blockers
 
@@ -103,6 +123,10 @@ def api_state():
         {key: item[key] for key in PUBLIC_EXPERIMENT_FIELDS}
         for item in store.list_experiments()
     ]
+    observations = [
+        {key: item[key] for key in PUBLIC_OBSERVATION_FIELDS}
+        for item in store.list_observations()
+    ]
     return jsonify(
         {
             "state": store.get_meta("state", "starting"),
@@ -121,6 +145,7 @@ def api_state():
             "leaderboard": store.leaderboard(),
             "actions": store.action_queue(),
             "experiments": experiments,
+            "observations": observations,
             "next_work": _next_work(),
             "owner_blockers": _owner_blockers(experiments),
             "recent": [

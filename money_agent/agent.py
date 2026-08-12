@@ -14,10 +14,22 @@ import time
 try:
     from . import llm, store
     from .experiments import classify_action, export_work_package
+    from .monitoring import (
+        ALLOWED_SOURCES,
+        MonitoringError,
+        monitor_experiment,
+        validate_public_https_url,
+    )
 except ImportError:  # Installed scripts also run directly on the Raspberry Pi.
     import llm
     import store
     from experiments import classify_action, export_work_package
+    from monitoring import (
+        ALLOWED_SOURCES,
+        MonitoringError,
+        monitor_experiment,
+        validate_public_https_url,
+    )
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -216,6 +228,7 @@ JUDGE_SCHEMA = {
                         "hypothesis": {"type": "string"},
                         "deliverable": {"type": "string"},
                         "metric": {"type": "string"},
+                        "measurement_source": {"type": "string"},
                         "window_days": {"type": "integer"},
                         "hours": {"type": "number"},
                         "cost_usd": {"type": "number"},
@@ -227,6 +240,7 @@ JUDGE_SCHEMA = {
                         "hypothesis",
                         "deliverable",
                         "metric",
+                        "measurement_source",
                         "window_days",
                         "hours",
                         "cost_usd",
@@ -428,7 +442,10 @@ class Agent:
             "bounded experiment. Prefer improving an owned project from the "
             "operator profile over proposing a new business. The metric must "
             "name its observable source, cost_usd must be honest, and the stop "
-            "condition must be objective. Use an empty object otherwise.\n"
+            "condition must be objective. Propose measurement_source as one of "
+            "analytics_readonly, payment_provider_readonly, owner_verified, or "
+            "public_http:https://...; configuration, not your output, decides "
+            "whether it is trusted. Use an empty object otherwise.\n"
             "- lesson: one durable, transferable sentence for future debates. "
             "Not a restatement of this idea — something that will still be true "
             "for the next twenty."
@@ -539,6 +556,25 @@ class Agent:
         autonomy_class = classify_action(experiment["action_kind"], cost_usd)
         if autonomy_class == "REJECTED":
             return None
+        proposed_source = str(experiment.get("measurement_source", "")).strip()
+        trusted_sources = {
+            source.strip()
+            for source in os.environ.get(
+                "MA_TRUSTED_MEASUREMENT_SOURCES", ""
+            ).split(",")
+            if source.strip() in ALLOWED_SOURCES
+        }
+        measurement_source = ""
+        if proposed_source.startswith("public_http:"):
+            try:
+                validate_public_https_url(
+                    proposed_source.removeprefix("public_http:")
+                )
+                measurement_source = proposed_source
+            except MonitoringError:
+                measurement_source = ""
+        elif proposed_source in trusted_sources:
+            measurement_source = proposed_source
         experiment_id = store.add_experiment(
             idea_id=idea_id,
             project=experiment["project"],
@@ -551,6 +587,7 @@ class Agent:
             autonomy_class=autonomy_class,
             hours=hours,
             cost_usd=cost_usd,
+            measurement_source=measurement_source,
         )
         store.add_experiment_event(
             experiment_id,
@@ -558,6 +595,15 @@ class Agent:
             f"Policy classified this work as {autonomy_class}.",
         )
         return experiment_id
+
+    def monitor_experiments(self):
+        monitored = 0
+        for experiment in store.list_experiments():
+            if experiment["status"] in ("won", "lost"):
+                continue
+            monitor_experiment(experiment["id"])
+            monitored += 1
+        return monitored
 
     def export_next_experiment(self):
         store.recover_stale_experiments()
@@ -621,6 +667,7 @@ class Agent:
         if self.over_budget():
             return
         store.set_meta("state", "working")
+        self.monitor_experiments()
         if self.export_next_experiment() is not None:
             return
         self.unit()
