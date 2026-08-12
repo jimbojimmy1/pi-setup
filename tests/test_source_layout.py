@@ -13,6 +13,14 @@ class SourceLayoutTest(unittest.TestCase):
             self.assertTrue(path.is_file(), name)
             py_compile.compile(str(path), doraise=True)
 
+    def test_ci_runs_python_and_installer_suites(self):
+        workflow = ROOT / ".github" / "workflows" / "ci.yml"
+        self.assertTrue(workflow.is_file())
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("python3 -m unittest discover -s tests -v", text)
+        self.assertIn("bash -n setup-money-agent.sh", text)
+        self.assertIn("bash tests/test_installer.sh", text)
+
 
 if __name__ == "__main__":
     unittest.main()

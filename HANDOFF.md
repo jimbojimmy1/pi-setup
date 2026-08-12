@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-12 17:12 (America/New_York)
+Updated: 2026-08-12 18:15 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `e4bbff7`
-- PR state checked before this update: open, draft, no checks configured
-- Remote PR head before this update: `038feda`
+- Latest implementation commit before this handoff update: `d157225`
+- PR state checked before this update: open, draft, mergeable
+- Remote PR head before this update: `d157225`
 
 ## Implemented architecture
 
@@ -55,6 +55,9 @@ impersonating the owner.
 - Each valid owned-project URL gets one deterministic zero-cost `AUTO_LOCAL`
   availability experiment, so FunnelSleuth monitoring starts after the updated
   daemon is installed and restarted.
+- GitHub Actions now runs the installer syntax check, installer preservation
+  test, and complete Python suite on pull requests and pushes to `main`, with
+  read-only repository permissions and a ten-minute job limit.
 
 ## Current owned revenue project
 
@@ -83,11 +86,12 @@ python3 -m unittest discover -s tests -v
 
 Latest combined verification before this documentation update:
 
-- `bash -n setup-money-agent.sh`: exit 0
-- `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
+- Git Bash `bash -n setup-money-agent.sh`: exit 0
+- Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- `python3 -m unittest discover -s tests -v`: 42 tests passed in 1.008 seconds
-- `git diff --check`: exit 0 before each monitoring commit
+- Python 3.11 `python -m unittest discover -s tests -v`: 43 tests passed in
+  0.974 seconds
+- `git diff --check`: exit 0
 
 ## Commits added in this workstream
 
@@ -117,10 +121,11 @@ Latest combined verification before this documentation update:
 - `362a10d` add bounded public-health evidence
 - `be3e857` run inbox and health monitoring each tick
 - `e4bbff7` bootstrap owned-project health monitoring
+- `d157225` hand off automated evidence collection and final verification
 
 ## Next action
 
-Add repository CI for the installer and Python suite, then expose inbox counts
-and recent availability on the dashboard. Do not connect financial or analytics
-accounts, send alerts/messages, or request credentials without explicit owner
-approval.
+Expose inbox counts and recent availability on the dashboard, using only local
+artifact metadata and the existing observation ledger. Do not connect financial
+or analytics accounts, send alerts/messages, or request credentials without
+explicit owner approval.
