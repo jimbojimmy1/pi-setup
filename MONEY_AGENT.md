@@ -246,6 +246,17 @@ most one `public_availability` observation per hour: `1` for HTTP 2xx/3xx and
 `0` for failure. That value cannot set `won` or `lost` and cannot report a sale,
 traffic, conversion, or revenue.
 
+### Dashboard evidence status
+
+The dashboard shows `.json` file counts for the incoming, processing, accepted,
+and rejected inbox directories. It does not expose filenames, evidence
+references, file contents, or rejected payloads. Missing or unreadable
+directories report zero instead of breaking the dashboard.
+
+The public availability panel shows only the latest `public_availability`
+observation as available or unavailable, plus its age. It is an uptime signal.
+It does not prove traffic, checkout readiness, conversion, a sale, or revenue.
+
 ## FunnelSleuth blocker
 
 FunnelSleuth is the first owned project. Its current offers are a $79 audit and

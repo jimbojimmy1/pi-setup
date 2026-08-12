@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-12 18:15 (America/New_York)
+Updated: 2026-08-12 19:11 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `d157225`
+- Latest implementation commit before this handoff update: `6af160c`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `d157225`
+- Remote PR head before this update: `6400ec9`
 
 ## Implemented architecture
 
@@ -58,6 +58,9 @@ impersonating the owner.
 - GitHub Actions now runs the installer syntax check, installer preservation
   test, and complete Python suite on pull requests and pushes to `main`, with
   read-only repository permissions and a ten-minute job limit.
+- The dashboard reports only inbox file counts and the latest public
+  availability state/time. It does not expose filenames, payloads, evidence
+  references, or infer revenue from uptime.
 
 ## Current owned revenue project
 
@@ -89,8 +92,8 @@ Latest combined verification before this documentation update:
 - Git Bash `bash -n setup-money-agent.sh`: exit 0
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- Python 3.11 `python -m unittest discover -s tests -v`: 43 tests passed in
-  0.959 seconds
+- Python 3.11 `python -m unittest discover -s tests -v`: 45 tests passed in
+  0.804 seconds
 - `git diff --check`: exit 0
 - GitHub Actions run `31645803074`: all steps passed; the workflow was then
   moved to the Node 24 action releases to remove its runtime deprecation warning
@@ -124,10 +127,13 @@ Latest combined verification before this documentation update:
 - `be3e857` run inbox and health monitoring each tick
 - `e4bbff7` bootstrap owned-project health monitoring
 - `d157225` hand off automated evidence collection and final verification
+- `c844c55` plan dashboard evidence visibility
+- `6af160c` show evidence health on the dashboard
 
 ## Next action
 
-Expose inbox counts and recent availability on the dashboard, using only local
-artifact metadata and the existing observation ledger. Do not connect financial
-or analytics accounts, send alerts/messages, or request credentials without
-explicit owner approval.
+Add a bounded, read-only checkout-readiness probe for owned public pages. It may
+detect whether an HTTPS Stripe or PayPal checkout destination is present but
+must not follow the checkout link, submit forms, create sessions, or infer a
+sale. Do not connect financial or analytics accounts, send alerts/messages, or
+request credentials without explicit owner approval.
