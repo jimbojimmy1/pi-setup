@@ -65,10 +65,40 @@ CREATE TABLE IF NOT EXISTS usage(
   cache_read INTEGER NOT NULL DEFAULT 0,
   usd        REAL    NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS experiments(
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  idea_id        INTEGER NOT NULL,
+  project        TEXT    NOT NULL,
+  action_kind    TEXT    NOT NULL,
+  hypothesis     TEXT    NOT NULL,
+  deliverable    TEXT    NOT NULL,
+  metric         TEXT    NOT NULL,
+  window_days    INTEGER NOT NULL,
+  autonomy_class TEXT    NOT NULL,
+  status         TEXT    NOT NULL DEFAULT 'ready',
+  hours          REAL    NOT NULL DEFAULT 0,
+  cost_usd       REAL    NOT NULL DEFAULT 0,
+  artifact_path  TEXT    NOT NULL DEFAULT '',
+  result         TEXT    NOT NULL DEFAULT '',
+  lease_until    REAL    NOT NULL DEFAULT 0,
+  created_at     REAL    NOT NULL,
+  updated_at     REAL    NOT NULL
+);
+CREATE TABLE IF NOT EXISTS experiment_events(
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  experiment_id INTEGER NOT NULL,
+  event_type    TEXT    NOT NULL,
+  detail        TEXT    NOT NULL DEFAULT '',
+  created_at    REAL    NOT NULL
+);
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_rounds_idea ON rounds(idea_id);
 CREATE INDEX IF NOT EXISTS idx_actions_idea ON actions(idea_id);
 CREATE INDEX IF NOT EXISTS idx_usage_day ON usage(day);
+CREATE INDEX IF NOT EXISTS idx_experiments_status
+  ON experiments(status, updated_at);
+CREATE INDEX IF NOT EXISTS idx_experiment_events_experiment
+  ON experiment_events(experiment_id, id);
 """
 
 
@@ -88,6 +118,13 @@ def init():
     c = conn()
     c.executescript(SCHEMA)
     c.commit()
+
+
+def close_connection():
+    c = getattr(_local, "c", None)
+    if c is not None:
+        c.close()
+        _local.c = None
 
 
 def utc_day():
@@ -226,6 +263,117 @@ def ancestors(i):
         if cur:
             out.append(cur)
     return list(reversed(out))
+
+
+# ---------- experiments ----------
+def add_experiment(
+    idea_id,
+    project,
+    action_kind,
+    hypothesis,
+    deliverable,
+    metric,
+    window_days,
+    autonomy_class,
+    hours,
+    cost_usd,
+):
+    now = time.time()
+    c = conn()
+    cur = c.execute(
+        "INSERT INTO experiments(idea_id,project,action_kind,hypothesis,deliverable,"
+        "metric,window_days,autonomy_class,status,hours,cost_usd,created_at,updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,'ready',?,?,?,?)",
+        (
+            int(idea_id),
+            str(project).strip(),
+            str(action_kind).strip(),
+            str(hypothesis).strip(),
+            str(deliverable).strip(),
+            str(metric).strip(),
+            int(window_days),
+            str(autonomy_class).strip(),
+            float(hours or 0),
+            float(cost_usd or 0),
+            now,
+            now,
+        ),
+    )
+    c.commit()
+    return cur.lastrowid
+
+
+def get_experiment(experiment_id):
+    row = conn().execute(
+        "SELECT * FROM experiments WHERE id=?", (experiment_id,)
+    ).fetchone()
+    return dict(row) if row else None
+
+
+def list_experiments(limit=50):
+    rows = conn().execute(
+        "SELECT * FROM experiments ORDER BY updated_at DESC, id DESC LIMIT ?",
+        (int(limit),),
+    ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def claim_experiment(lease_seconds=900):
+    c = conn()
+    now = time.time()
+    c.execute("BEGIN IMMEDIATE")
+    try:
+        row = c.execute(
+            "SELECT id FROM experiments WHERE status='ready'"
+            " ORDER BY updated_at ASC, id ASC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            c.execute("COMMIT")
+            return None
+        lease_until = now + float(lease_seconds)
+        c.execute(
+            "UPDATE experiments SET status='exported', lease_until=?, updated_at=?"
+            " WHERE id=?",
+            (lease_until, now, row["id"]),
+        )
+        claimed = c.execute(
+            "SELECT * FROM experiments WHERE id=?", (row["id"],)
+        ).fetchone()
+        c.execute("COMMIT")
+        return dict(claimed)
+    except Exception:
+        c.execute("ROLLBACK")
+        raise
+
+
+def recover_stale_experiments():
+    c = conn()
+    cur = c.execute(
+        "UPDATE experiments SET status='ready', lease_until=0, updated_at=?"
+        " WHERE status='exported' AND lease_until < ?",
+        (time.time(), time.time()),
+    )
+    c.commit()
+    return cur.rowcount
+
+
+def add_experiment_event(experiment_id, event_type, detail=""):
+    c = conn()
+    cur = c.execute(
+        "INSERT INTO experiment_events(experiment_id,event_type,detail,created_at)"
+        " VALUES(?,?,?,?)",
+        (int(experiment_id), str(event_type), str(detail), time.time()),
+    )
+    c.commit()
+    return cur.lastrowid
+
+
+def experiment_events(experiment_id):
+    rows = conn().execute(
+        "SELECT * FROM experiment_events WHERE experiment_id=? ORDER BY id ASC",
+        (int(experiment_id),),
+    ).fetchall()
+    return [dict(row) for row in rows]
 
 
 # ---------- rounds ----------
