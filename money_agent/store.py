@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS experiments(
   hypothesis     TEXT    NOT NULL,
   deliverable    TEXT    NOT NULL,
   metric         TEXT    NOT NULL,
+  measurement_source TEXT NOT NULL DEFAULT '',
   stop_condition TEXT    NOT NULL DEFAULT '',
   window_days    INTEGER NOT NULL,
   autonomy_class TEXT    NOT NULL,
@@ -92,6 +93,18 @@ CREATE TABLE IF NOT EXISTS experiment_events(
   detail        TEXT    NOT NULL DEFAULT '',
   created_at    REAL    NOT NULL
 );
+CREATE TABLE IF NOT EXISTS observations(
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  experiment_id INTEGER NOT NULL,
+  source_kind   TEXT    NOT NULL,
+  metric        TEXT    NOT NULL,
+  value         REAL    NOT NULL,
+  revenue_usd   REAL    NOT NULL DEFAULT 0,
+  evidence_ref  TEXT    NOT NULL,
+  observed_at   REAL    NOT NULL,
+  created_at    REAL    NOT NULL,
+  UNIQUE(experiment_id, source_kind, evidence_ref)
+);
 CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_rounds_idea ON rounds(idea_id);
 CREATE INDEX IF NOT EXISTS idx_actions_idea ON actions(idea_id);
@@ -100,6 +113,8 @@ CREATE INDEX IF NOT EXISTS idx_experiments_status
   ON experiments(status, updated_at);
 CREATE INDEX IF NOT EXISTS idx_experiment_events_experiment
   ON experiment_events(experiment_id, id);
+CREATE INDEX IF NOT EXISTS idx_observations_experiment
+  ON observations(experiment_id, observed_at, id);
 """
 
 
@@ -124,6 +139,11 @@ def init():
     if "stop_condition" not in columns:
         c.execute(
             "ALTER TABLE experiments ADD COLUMN stop_condition TEXT NOT NULL DEFAULT ''"
+        )
+    if "measurement_source" not in columns:
+        c.execute(
+            "ALTER TABLE experiments ADD COLUMN measurement_source TEXT NOT NULL"
+            " DEFAULT ''"
         )
     c.commit()
 
@@ -286,13 +306,15 @@ def add_experiment(
     autonomy_class,
     hours,
     cost_usd,
+    measurement_source="",
 ):
     now = time.time()
     c = conn()
     cur = c.execute(
         "INSERT INTO experiments(idea_id,project,action_kind,hypothesis,deliverable,"
-        "metric,stop_condition,window_days,autonomy_class,status,hours,cost_usd,"
-        "created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,'ready',?,?,?,?)",
+        "metric,measurement_source,stop_condition,window_days,autonomy_class,status,"
+        "hours,cost_usd,created_at,updated_at)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,'ready',?,?,?,?)",
         (
             int(idea_id),
             str(project).strip(),
@@ -300,6 +322,7 @@ def add_experiment(
             str(hypothesis).strip(),
             str(deliverable).strip(),
             str(metric).strip(),
+            str(measurement_source).strip(),
             str(stop_condition).strip(),
             int(window_days),
             str(autonomy_class).strip(),
@@ -397,6 +420,74 @@ def experiment_events(experiment_id):
         "SELECT * FROM experiment_events WHERE experiment_id=? ORDER BY id ASC",
         (int(experiment_id),),
     ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_experiment_status(experiment_id, status, result=None):
+    c = conn()
+    now = time.time()
+    if result is None:
+        c.execute(
+            "UPDATE experiments SET status=?, updated_at=? WHERE id=?",
+            (str(status), now, int(experiment_id)),
+        )
+    else:
+        c.execute(
+            "UPDATE experiments SET status=?, result=?, updated_at=? WHERE id=?",
+            (str(status), str(result), now, int(experiment_id)),
+        )
+    c.commit()
+
+
+# ---------- observations ----------
+def add_observation(
+    experiment_id,
+    source_kind,
+    metric,
+    value,
+    revenue_usd,
+    evidence_ref,
+    observed_at,
+):
+    c = conn()
+    now = time.time()
+    values = (
+        int(experiment_id),
+        str(source_kind).strip(),
+        str(metric).strip(),
+        float(value),
+        float(revenue_usd or 0),
+        str(evidence_ref).strip(),
+        float(observed_at),
+        now,
+    )
+    c.execute(
+        "INSERT OR IGNORE INTO observations("
+        "experiment_id,source_kind,metric,value,revenue_usd,evidence_ref,"
+        "observed_at,created_at) VALUES(?,?,?,?,?,?,?,?)",
+        values,
+    )
+    row = c.execute(
+        "SELECT id FROM observations WHERE experiment_id=? AND source_kind=?"
+        " AND evidence_ref=?",
+        (values[0], values[1], values[5]),
+    ).fetchone()
+    c.commit()
+    return row["id"]
+
+
+def list_observations(experiment_id=None, limit=100):
+    if experiment_id is None:
+        rows = conn().execute(
+            "SELECT * FROM observations ORDER BY observed_at DESC, id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    else:
+        rows = conn().execute(
+            "SELECT * FROM observations WHERE experiment_id=?"
+            " ORDER BY observed_at DESC, id DESC LIMIT ?",
+            (int(experiment_id), int(limit)),
+        ).fetchall()
     return [dict(row) for row in rows]
 
 
