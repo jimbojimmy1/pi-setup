@@ -86,7 +86,7 @@ Latest combined verification before this documentation update:
 - `bash -n setup-money-agent.sh`: exit 0
 - `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- `python3 -m unittest discover -s tests -v`: 42 tests passed in 0.947 seconds
+- `python3 -m unittest discover -s tests -v`: 42 tests passed in 1.008 seconds
 - `git diff --check`: exit 0 before each monitoring commit
 
 ## Commits added in this workstream
