@@ -242,6 +242,53 @@ class AgentExperimentTest(unittest.TestCase):
         validate.assert_called_once_with(experiment_id)
         collect.assert_called_once_with(experiment_id)
 
+    def test_monitoring_scans_beyond_dashboard_window(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        oldest_idea = self.store.add_idea("Oldest active experiment")
+        oldest_id = self.store.add_experiment(
+            idea_id=oldest_idea,
+            project="FunnelSleuth",
+            action_kind="build_owned_asset",
+            hypothesis="The oldest experiment remains monitored.",
+            deliverable="Keep checking its measurement configuration.",
+            metric="qualified runs",
+            stop_condition="Stop after its declared window.",
+            window_days=30,
+            autonomy_class="CODEX_REVIEWED",
+            hours=1,
+            cost_usd=0,
+            measurement_source="analytics_readonly",
+        )
+        for index in range(50):
+            idea_id = self.store.add_idea(f"Newer experiment {index}")
+            self.store.add_experiment(
+                idea_id=idea_id,
+                project="FunnelSleuth",
+                action_kind="build_owned_asset",
+                hypothesis="A newer experiment exists.",
+                deliverable=f"Measure newer experiment {index}.",
+                metric="qualified runs",
+                stop_condition="Stop after its declared window.",
+                window_days=30,
+                autonomy_class="CODEX_REVIEWED",
+                hours=1,
+                cost_usd=0,
+                measurement_source="analytics_readonly",
+            )
+
+        with patch.object(
+            agent_module,
+            "monitor_experiment",
+            side_effect=lambda experiment_id: self.store.get_experiment(experiment_id),
+        ) as monitor:
+            monitored = agent.monitor_experiments()
+
+        self.assertEqual(monitored, 51)
+        self.assertIn(oldest_id, [call.args[0] for call in monitor.call_args_list])
+
     def test_owned_project_checkout_check_is_bootstrapped_once(self):
         import money_agent.agent as agent_module
 
@@ -269,6 +316,38 @@ class AgentExperimentTest(unittest.TestCase):
         self.assertEqual(experiments[0]["metric"], "checkout_readiness")
         self.assertEqual(experiments[0]["autonomy_class"], "AUTO_LOCAL")
         self.assertEqual(experiments[0]["cost_usd"], 0)
+
+    def test_revenue_bootstrap_finds_lane_beyond_dashboard_window(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        agent.profile = {"owned_projects": [{"name": "FunnelSleuth"}]}
+        self.assertEqual(agent.bootstrap_owned_revenue_lanes(), 1)
+        for index in range(50):
+            idea_id = self.store.add_idea(f"Newer filler {index}")
+            self.store.add_experiment(
+                idea_id=idea_id,
+                project="Other",
+                action_kind="build_owned_asset",
+                hypothesis="A filler experiment exists.",
+                deliverable=f"Filler {index}.",
+                metric="qualified runs",
+                stop_condition="Stop after its window.",
+                window_days=30,
+                autonomy_class="CODEX_REVIEWED",
+                hours=1,
+                cost_usd=0,
+                measurement_source="analytics_readonly",
+            )
+
+        self.assertEqual(agent.bootstrap_owned_revenue_lanes(), 0)
+        lanes = [
+            item
+            for item in self.store.list_experiments(limit=None)
+            if item["action_kind"] == "prepare_verified_revenue_lane"
+        ]
+        self.assertEqual(len(lanes), 1)
 
     def test_monitoring_dispatches_checkout_readiness_metric(self):
         import money_agent.agent as agent_module

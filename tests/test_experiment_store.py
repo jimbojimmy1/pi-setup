@@ -86,6 +86,16 @@ class ExperimentStoreTest(unittest.TestCase):
         self.assertEqual([event["id"] for event in events], [first, second])
         self.assertEqual(events[1]["event_type"], "observation")
 
+    def test_list_experiments_keeps_display_bound_and_supports_complete_scan(self):
+        for index in range(55):
+            self.add_ready_experiment(f"Experiment {index}")
+
+        self.assertEqual(len(self.store.list_experiments()), 50)
+        self.assertEqual(len(self.store.list_experiments(limit=None)), 55)
+        for invalid in (0, -1, True, 1.5, "50"):
+            with self.subTest(limit=invalid), self.assertRaises(ValueError):
+                self.store.list_experiments(limit=invalid)
+
 
 if __name__ == "__main__":
     unittest.main()

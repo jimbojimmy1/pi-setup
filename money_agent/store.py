@@ -359,10 +359,17 @@ def get_experiment(experiment_id):
 
 
 def list_experiments(limit=50):
-    rows = conn().execute(
-        "SELECT * FROM experiments ORDER BY updated_at DESC, id DESC LIMIT ?",
-        (int(limit),),
-    ).fetchall()
+    if limit is None:
+        rows = conn().execute(
+            "SELECT * FROM experiments ORDER BY updated_at DESC, id DESC"
+        ).fetchall()
+    else:
+        if type(limit) is not int or limit < 1:
+            raise ValueError("experiment limit must be a positive integer or None")
+        rows = conn().execute(
+            "SELECT * FROM experiments ORDER BY updated_at DESC, id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
     return [dict(row) for row in rows]
 
 
