@@ -9,6 +9,7 @@ RELEASE_REF="${MA_RELEASE_REF:-main}"
 REPOSITORY="${MA_REPOSITORY:-jimbojimmy1/pi-setup}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOCAL_SOURCE="$SCRIPT_DIR/money_agent"
+release_revision=''
 REQUIRED_FILES=(
   __init__.py
   store.py
@@ -28,6 +29,31 @@ trap 'rm -rf -- "$stage"' EXIT
 
 log() {
   printf '[money-agent] %s\n' "$*"
+}
+
+validate_release_revision() {
+  local value="$1"
+  if [ -z "$value" ] || [ "${#value}" -gt 128 ] \
+    || [[ ! "$value" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]*$ ]] \
+    || [[ "$value" == *..* ]]; then
+    printf 'release revision is invalid\n' >&2
+    return 1
+  fi
+}
+
+resolve_release_revision() {
+  if [ -d "$LOCAL_SOURCE" ] && command -v git >/dev/null 2>&1 \
+    && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    release_revision="$(git -C "$SCRIPT_DIR" rev-parse HEAD)"
+    if [ -n "$(git -C "$SCRIPT_DIR" status --porcelain --untracked-files=normal)" ]; then
+      release_revision="${release_revision}-dirty"
+    fi
+  elif [ -d "$LOCAL_SOURCE" ]; then
+    release_revision='local-unversioned'
+  else
+    release_revision="$RELEASE_REF"
+  fi
+  validate_release_revision "$release_revision"
 }
 
 copy_local_source() {
@@ -84,6 +110,9 @@ MA_DAILY_USD=0.00
 # analytics_readonly). Leave empty until a read-only source is actually wired.
 MA_TRUSTED_MEASUREMENT_SOURCES=
 
+# Optional reviewed Git revision for the dashboard's local release comparison.
+MA_EXPECTED_RELEASE_REF=
+
 MA_TICK_SECONDS=900
 MA_HORIZON=fast
 MA_MAX_ROUNDS=4
@@ -98,7 +127,7 @@ EOF
 }
 
 install_runtime() {
-  local relative
+  local relative marker_tmp
   mkdir -p "$APP_DIR/templates"
   install_config
 
@@ -109,6 +138,11 @@ install_runtime() {
     fi
     install -m 0644 "$stage/$relative" "$APP_DIR/$relative"
   done
+
+  marker_tmp="$APP_DIR/.release.txt.tmp"
+  printf '%s\n' "$release_revision" > "$marker_tmp"
+  chmod 0644 "$marker_tmp"
+  mv -f -- "$marker_tmp" "$APP_DIR/release.txt"
 }
 
 install_services() {
@@ -155,6 +189,8 @@ EOF
   sudo systemctl enable --now money-agent-web money-agent
 }
 
+resolve_release_revision
+
 if [ "${MA_SKIP_APT:-0}" != "1" ]; then
   log 'installing operating-system dependencies'
   sudo apt-get update -qq
@@ -186,6 +222,7 @@ fi
 ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
 ip="${ip:-YOUR_PI_IP}"
 log "installed validated runtime in $APP_DIR"
+log "installed release: $release_revision"
 log "dashboard: http://$ip:$PORT"
 log 'existing config.env, profile.json, money.db, and artifacts were preserved'
 log 'no spending, outreach, account creation, or payment changes were performed'

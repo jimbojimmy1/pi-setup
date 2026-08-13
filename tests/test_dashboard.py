@@ -56,6 +56,7 @@ class DashboardStateTest(unittest.TestCase):
         os.environ.pop("MA_DB", None)
         os.environ.pop("MA_ARTIFACT_ROOT", None)
         os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.environ.pop("MA_EXPECTED_RELEASE_REF", None)
         self.tmp.cleanup()
 
     def test_state_exposes_work_and_owner_blockers_without_secrets(self):
@@ -229,6 +230,84 @@ class DashboardStateTest(unittest.TestCase):
         self.assertIn("checkout link not detected", template)
         self.assertIn("no checkout evidence", template)
         self.assertIn("not a payment", template)
+
+    def _release_state(self, installed=None, expected=None):
+        marker = self.root / "release.txt"
+        if installed is not None:
+            marker.write_text(installed, encoding="utf-8")
+        elif marker.exists():
+            marker.unlink()
+
+        import money_agent.app as app_module
+
+        app_module = importlib.reload(app_module)
+        environment = {"MA_EXPECTED_RELEASE_REF": expected} if expected else {}
+        with patch.dict(os.environ, environment, clear=False), patch.object(
+            app_module, "RELEASE_MARKER", marker
+        ):
+            response = app_module.app.test_client().get("/api/state")
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()["runtime_release"]
+
+    def test_runtime_release_reports_clean_match_and_mismatch(self):
+        revision = "6452753bc32f1eebc05cf9e3170f21e481a030ad"
+
+        self.assertEqual(
+            self._release_state(revision + "\n", revision[:12]),
+            {
+                "installed": revision,
+                "expected": revision[:12],
+                "status": "current",
+            },
+        )
+        self.assertEqual(
+            self._release_state(revision, "ae02000"),
+            {
+                "installed": revision,
+                "expected": "ae02000",
+                "status": "outdated",
+            },
+        )
+
+    def test_runtime_release_fails_closed_for_dirty_missing_or_invalid_markers(self):
+        revision = "6452753bc32f1eebc05cf9e3170f21e481a030ad"
+        self.assertEqual(
+            self._release_state(revision + "-dirty", revision),
+            {
+                "installed": revision + "-dirty",
+                "expected": revision,
+                "status": "dirty",
+            },
+        )
+        self.assertEqual(
+            self._release_state(None, revision),
+            {"installed": None, "expected": revision, "status": "unknown"},
+        )
+        self.assertEqual(
+            self._release_state("../../secret\n", revision),
+            {"installed": None, "expected": revision, "status": "unknown"},
+        )
+        self.assertEqual(
+            self._release_state("local-unversioned", "local-unversioned"),
+            {
+                "installed": "local-unversioned",
+                "expected": "local-unversioned",
+                "status": "unknown",
+            },
+        )
+
+    def test_template_renders_runtime_release_without_deployment_claim(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "money_agent"
+            / "templates"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("RUNTIME RELEASE", template)
+        self.assertIn("d.runtime_release", template)
+        for status in ("current", "outdated", "dirty", "unknown"):
+            self.assertIn(status, template)
 
 
 if __name__ == "__main__":

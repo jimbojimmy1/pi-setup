@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import time
 
 from flask import Flask, jsonify, render_template, request
@@ -14,6 +15,9 @@ except ImportError:  # Installed scripts also run directly on the Raspberry Pi.
 app = Flask(__name__)
 DAILY_USD = float(os.environ.get("MA_DAILY_USD", "2.00") or 0)
 _ready = False
+RELEASE_MARKER = Path(__file__).resolve().parent / "release.txt"
+RELEASE_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._/-]{0,127}")
+HEX_REVISION_PATTERN = re.compile(r"[0-9a-fA-F]{7,40}")
 
 PUBLIC_EXPERIMENT_FIELDS = (
     "id",
@@ -49,6 +53,47 @@ def _artifact_root():
     return Path(
         os.environ.get("MA_ARTIFACT_ROOT", Path(__file__).resolve().parent / "artifacts")
     ).resolve()
+
+
+def _valid_release(value):
+    return (
+        value
+        if RELEASE_PATTERN.fullmatch(value) and ".." not in value
+        else None
+    )
+
+
+def _runtime_release():
+    installed = None
+    try:
+        raw = RELEASE_MARKER.read_bytes()
+        if len(raw) <= 129:
+            installed = _valid_release(raw.decode("ascii").strip())
+    except (OSError, UnicodeDecodeError):
+        pass
+
+    expected = _valid_release(
+        os.environ.get("MA_EXPECTED_RELEASE_REF", "").strip()
+    )
+    status = "unknown"
+    if installed == "local-unversioned":
+        status = "unknown"
+    elif installed and installed.endswith("-dirty"):
+        status = "dirty"
+    elif installed and expected:
+        if installed == expected:
+            status = "current"
+        elif HEX_REVISION_PATTERN.fullmatch(installed) and HEX_REVISION_PATTERN.fullmatch(
+            expected
+        ):
+            status = (
+                "current"
+                if installed.startswith(expected) or expected.startswith(installed)
+                else "outdated"
+            )
+        else:
+            status = "outdated"
+    return {"installed": installed, "expected": expected, "status": status}
 
 
 def _next_work():
@@ -223,6 +268,7 @@ def api_state():
             "experiments": experiments,
             "observations": observations,
             "inbox": _inbox_counts(),
+            "runtime_release": _runtime_release(),
             "availability": _latest_availability(observations),
             "checkout_readiness": checkout_readiness,
             "next_work": _next_work(),

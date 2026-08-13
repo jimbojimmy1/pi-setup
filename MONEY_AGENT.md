@@ -67,6 +67,24 @@ The standalone path downloads every required file from that exact ref into a
 temporary staging directory. A missing or invalid file stops the upgrade before
 runtime files are replaced.
 
+Every install writes the copied source revision to `~/money-agent/release.txt`.
+A cloned install records the full Git commit and adds `-dirty` when local
+changes or untracked files were present. A standalone install records the exact
+`MA_RELEASE_REF` supplied to the installer. The marker contains no credentials.
+
+To make the dashboard compare the installed runtime with a reviewed release,
+set the expected commit in `~/money-agent/config.env` before restarting the web
+service:
+
+```bash
+MA_EXPECTED_RELEASE_REF=FULL_REVIEWED_COMMIT_SHA
+```
+
+The release panel reports `current` only for an exact or unambiguous Git-SHA
+prefix match. It reports `outdated` for a mismatch, `dirty` for an uncommitted
+local install, and `unknown` when either side is not recorded. The dashboard
+does not query GitHub or claim that repository-only changes are deployed.
+
 ## Roll back
 
 Find the last known-good commit, then reinstall its runtime:
@@ -102,6 +120,7 @@ unchanged.
 | `MA_PROMOTE_AT` | `72` | Score required for promotion. |
 | `MA_KILL_AT` | `35` | Scores below this value kill an idea. |
 | `MA_ARTIFACT_ROOT` | `~/money-agent/artifacts` | Destination for automation handoffs. |
+| `MA_EXPECTED_RELEASE_REF` | empty | Reviewed commit expected to be installed; used only for local dashboard comparison. |
 
 Edit `profile.json` to change the operator constraints or owned projects. The
 installer never overwrites a customized profile.
