@@ -220,6 +220,23 @@ class DashboardStateTest(unittest.TestCase):
             evidence_ref="public-health:private-ref",
             observed_at=1500,
         )
+        connection = self.store.conn()
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "public_http",
+                "public_availability",
+                0,
+                0,
+                "public-health:malformed-time",
+                b"2000",
+                1,
+            ),
+        )
+        connection.commit()
 
         import money_agent.app as app_module
 
@@ -315,6 +332,23 @@ class DashboardStateTest(unittest.TestCase):
             evidence_ref="checkout-readiness:zero",
             observed_at=1500,
         )
+        connection = self.store.conn()
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "public_http",
+                "checkout_readiness",
+                1,
+                0,
+                "checkout-readiness:malformed-time",
+                b"2000",
+                1,
+            ),
+        )
+        connection.commit()
         zero = self._state()
         self.assertFalse(zero["checkout_readiness"][0]["ready"])
         self.assertEqual(zero["checkout_readiness"][0]["age"], "10m ago")

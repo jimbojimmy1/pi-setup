@@ -127,6 +127,7 @@ def _latest_availability(observations):
         if (
             item["source_kind"] == "public_http"
             and item["metric"] == "public_availability"
+            and item["observed_at"] is not None
         ):
             observed_at = float(item["observed_at"])
             return {
@@ -170,6 +171,7 @@ def _checkout_readiness(experiments, observations):
         if (
             observation["source_kind"] == "public_http"
             and observation["metric"] == "checkout_readiness"
+            and observation["observed_at"] is not None
         ):
             newest.setdefault(observation["experiment_id"], observation)
     statuses = []
