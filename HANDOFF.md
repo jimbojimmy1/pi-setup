@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-13 02:36 (America/New_York)
+Updated: 2026-08-13 03:22 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `59478aa`
+- Latest implementation commit before this handoff update: `40d8816`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `e2d8c43` (new local commits not yet pushed)
+- Remote PR head before this update: `9a43278` (new local commits not yet pushed)
 
 ## Implemented architecture
 
@@ -94,6 +94,12 @@ impersonating the owner.
 - Malformed historical rows fail closed by SQLite storage class, bounded evidence
   reference, native numeric type, positivity, and finiteness before deduplication.
   Invalid public timestamps are skipped so older valid health evidence remains.
+- Each named owned project now gets a zero-cost local `owner_verified` revenue
+  lane before inbox processing. It starts in `measuring` with no observations,
+  cannot be exported as work, and asserts no revenue or payment-provider access.
+- A confirmed payment can now enter the existing strict importer through the
+  lane's exact `verified_payment` metric, update the deduplicated revenue total,
+  and add an evidence-backed lesson. Non-finite direct evidence fails closed.
 
 ## Current owned revenue project
 
@@ -107,6 +113,8 @@ impersonating the owner.
   an authenticated owner session
 - Measurement blocker: no read-only Stripe, PayPal, or analytics adapter is
   configured
+- Repository-only revenue lane: prepared in `40d8816`; it is not on the Pi and
+  remains empty until an owner independently confirms and imports a real payment
 - Public availability evidence: the bounded direct-IP probe returned HTTP 200
   on 2026-08-12; this does not verify checkout, conversion, or revenue
 - Checkout readiness evidence: the bounded probe returned HTTP 200 but found no
@@ -134,12 +142,12 @@ Latest combined verification before this documentation update:
   fail-closed cases passed
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- Python 3.11 `python -m unittest discover -s tests -q`: 61 tests passed in
-  2.065 seconds
+- Python 3.11 `python -m unittest discover -s tests -v`: 64 tests passed in
+  2.194 seconds
 - `git diff --check`: exit 0
 - Installer tests also cover immutable standalone provenance and stale-marker
   invalidation after an injected partial-upgrade failure.
-- GitHub Actions run `31670866328`: all steps passed for remote head `e2d8c43`;
+- GitHub Actions run `31674549615`: all steps passed for remote head `9a43278`;
   checks for the new commits must pass after push.
 
 ## Commits added in this workstream
@@ -189,6 +197,7 @@ Latest combined verification before this documentation update:
 - `9293d5d` reject malformed revenue evidence
 - `3c09bc8` validate revenue rows before deduplication
 - `59478aa` skip malformed public evidence times
+- `40d8816` prepare owner-verified revenue evidence
 
 ## Next action
 
