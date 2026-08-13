@@ -107,6 +107,31 @@ class ObservationStoreTest(unittest.TestCase):
                 observed_at=observed_at,
             )
 
+        connection = self.store.conn()
+        for revenue_usd, evidence_ref, observed_at in (
+            ("garbage", "owner:garbage", 3500),
+            (79, "", 3600),
+            (float("inf"), "owner:infinity", 3700),
+            (79, "owner:bad-time", "later"),
+            (79, b"owner:binary-ref", 3800),
+        ):
+            connection.execute(
+                "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+                "revenue_usd,evidence_ref,observed_at,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    experiment_id,
+                    "owner_verified",
+                    "qualified runs",
+                    1,
+                    revenue_usd,
+                    evidence_ref,
+                    observed_at,
+                    1,
+                ),
+            )
+        connection.commit()
+
         self.assertEqual(
             self.store.verified_revenue_summary(),
             {"total_usd": 378.0, "payments": 2, "last_observed_at": 1500.0},

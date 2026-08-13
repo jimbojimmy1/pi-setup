@@ -27,6 +27,12 @@ still counts once. If duplicate rows disagree on amount, the lower positive
 amount is used to avoid overstating revenue. The query covers the full ledger
 rather than the bounded dashboard observation list.
 
+Historical rows fail closed unless amount and timestamp have numeric SQLite
+storage classes, are positive and finite, and the evidence reference is nonblank
+bounded text. The public observation list independently zeroes revenue that does
+not meet the same evidence requirements, so malformed legacy data cannot create
+a payment label or crash the dashboard.
+
 The result contains:
 
 - `total_usd`: sum of accepted observed payment amounts, rounded to cents at the

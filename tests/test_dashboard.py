@@ -103,6 +103,23 @@ class DashboardStateTest(unittest.TestCase):
                 evidence_ref=evidence_ref,
                 observed_at=observed_at,
             )
+        connection = self.store.conn()
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "owner_verified",
+                "qualified runs in FunnelSleuth analytics",
+                1,
+                float("inf"),
+                "owner:infinity",
+                "later",
+                1,
+            ),
+        )
+        connection.commit()
 
         payload = self._state(now=2100)
 
@@ -122,6 +139,13 @@ class DashboardStateTest(unittest.TestCase):
             and item["observed_at"] == 2000
         )
         self.assertEqual(analytics["revenue_usd"], 0)
+        malformed = next(
+            item
+            for item in payload["observations"]
+            if item["source_kind"] == "owner_verified"
+            and item["observed_at"] == "later"
+        )
+        self.assertEqual(malformed["revenue_usd"], 0)
 
     def test_template_renders_verified_revenue_as_recorded_evidence(self):
         template = (

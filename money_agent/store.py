@@ -1,5 +1,6 @@
 """SQLite store. Two processes (daemon + web) share it, so WAL + busy_timeout."""
 import json
+import math
 import os
 import sqlite3
 import threading
@@ -492,23 +493,38 @@ def list_observations(experiment_id=None, limit=100):
 
 
 def verified_revenue_summary():
-    row = conn().execute(
-        "SELECT COALESCE(SUM(revenue_usd), 0) AS total_usd,"
-        " COUNT(*) AS payments, MAX(observed_at) AS last_observed_at"
-        " FROM (SELECT source_kind, evidence_ref, MIN(revenue_usd) AS revenue_usd,"
+    rows = conn().execute(
+        "SELECT source_kind, evidence_ref, MIN(revenue_usd) AS revenue_usd,"
         " MAX(observed_at) AS observed_at FROM observations"
-        " WHERE revenue_usd > 0 AND source_kind IN (?, ?)"
-        " GROUP BY source_kind, evidence_ref)",
+        " WHERE source_kind IN (?, ?)"
+        " AND typeof(revenue_usd) IN ('integer', 'real') AND revenue_usd > 0"
+        " AND typeof(observed_at) IN ('integer', 'real') AND observed_at > 0"
+        " AND typeof(evidence_ref) = 'text'"
+        " AND length(trim(evidence_ref)) BETWEEN 1 AND 512"
+        " GROUP BY source_kind, evidence_ref",
         ("payment_provider_readonly", "owner_verified"),
-    ).fetchone()
+    ).fetchall()
+    total = 0.0
+    payments = 0
+    last_observed_at = None
+    for row in rows:
+        amount = float(row["revenue_usd"])
+        observed_at = float(row["observed_at"])
+        next_total = total + amount
+        if (
+            not math.isfinite(amount)
+            or not math.isfinite(observed_at)
+            or not math.isfinite(next_total)
+        ):
+            continue
+        total = next_total
+        payments += 1
+        if last_observed_at is None or observed_at > last_observed_at:
+            last_observed_at = observed_at
     return {
-        "total_usd": float(row["total_usd"] or 0),
-        "payments": int(row["payments"] or 0),
-        "last_observed_at": (
-            None
-            if row["last_observed_at"] is None
-            else float(row["last_observed_at"])
-        ),
+        "total_usd": total,
+        "payments": payments,
+        "last_observed_at": last_observed_at,
     }
 
 
