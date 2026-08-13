@@ -15,7 +15,7 @@ impersonating the owner.
 - Branch: `claude/money-making-agent-debate-fp1ag2`
 - Latest implementation commit before this handoff update: `04210f1`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `7370a4b` (new local commits not yet pushed)
+- Remote PR implementation head verified after push: `621dd49`
 
 ## Implemented architecture
 
@@ -155,8 +155,8 @@ Latest combined verification before this documentation update:
 - `git diff --check`: exit 0
 - Installer tests also cover immutable standalone provenance and stale-marker
   invalidation after an injected partial-upgrade failure.
-- GitHub Actions run `31681908653`: all steps passed for remote head `7370a4b`;
-  checks for the new commits must pass after push.
+- GitHub Actions run `31686704706`: all steps passed for remote implementation
+  head `621dd49`.
 
 ## Commits added in this workstream
 
