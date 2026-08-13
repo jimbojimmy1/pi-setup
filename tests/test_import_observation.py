@@ -150,6 +150,53 @@ class ObservationImportTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(stdout.getvalue())["status"], "won")
 
+    def test_owner_verified_lane_turns_one_payment_into_summary_and_lesson(self):
+        import money_agent.agent as agent_module
+        from money_agent.import_observation import main
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        agent.profile = {"owned_projects": [{"name": "FunnelSleuth"}]}
+        self.assertEqual(agent.bootstrap_owned_revenue_lanes(), 1)
+        lane = next(
+            item
+            for item in self.store.list_experiments()
+            if item["action_kind"] == "prepare_verified_revenue_lane"
+        )
+        payload = {
+            "experiment_id": lane["id"],
+            "source_kind": "owner_verified",
+            "metric": "verified_payment",
+            "value": 1,
+            "evidence_ref": "owner:receipt-79",
+            "observed_at": 1800000000,
+            "revenue_usd": 79,
+            "outcome": "won",
+            "window_complete": False,
+        }
+
+        stdout = StringIO()
+        code = main(
+            ["-"],
+            input_stream=StringIO(json.dumps(payload)),
+            output_stream=stdout,
+            error_stream=StringIO(),
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout.getvalue())["status"], "won")
+        self.assertEqual(
+            self.store.verified_revenue_summary(),
+            {"total_usd": 79.0, "payments": 1, "last_observed_at": 1800000000.0},
+        )
+        self.assertTrue(
+            any(
+                "Verified experiment win" in item["text"]
+                and "$79.00" in item["text"]
+                for item in self.store.lessons()
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

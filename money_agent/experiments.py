@@ -11,6 +11,7 @@ from typing import Any, Mapping
 
 AUTO_LOCAL_ACTIONS = {
     "analyze_public_data",
+    "prepare_verified_revenue_lane",
     "public_health_check",
     "write_brief",
 }

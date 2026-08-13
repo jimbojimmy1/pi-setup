@@ -753,6 +753,68 @@ class Agent:
             created += 1
         return created
 
+    def bootstrap_owned_revenue_lanes(self):
+        """Prepare a zero-claim destination for explicit owner payment evidence."""
+        action_kind = "prepare_verified_revenue_lane"
+        measurement_source = "owner_verified"
+        existing = {
+            (
+                experiment["project"],
+                experiment["action_kind"],
+                experiment["measurement_source"],
+            )
+            for experiment in store.list_experiments()
+        }
+        created = 0
+        projects = self.profile.get("owned_projects", [])
+        if not isinstance(projects, list):
+            return 0
+        for project in projects:
+            if not isinstance(project, dict):
+                continue
+            name = str(project.get("name", "")).strip()
+            key = (name, action_kind, measurement_source)
+            if not name or key in existing:
+                continue
+            idea_id = store.add_idea(
+                f"{name} verified revenue evidence",
+                thesis=(
+                    f"Prepare a local evidence lane for {name} so a real payment "
+                    "can be recorded without inferring revenue from traffic or "
+                    "checkout readiness."
+                ),
+            )
+            experiment_id = store.add_experiment(
+                idea_id=idea_id,
+                project=name,
+                action_kind=action_kind,
+                hypothesis=(
+                    f"Explicit owner-verified evidence can measure payments for {name}."
+                ),
+                deliverable=(
+                    f"Accept only explicit owner-verified payment evidence for {name}."
+                ),
+                metric="verified_payment",
+                stop_condition=(
+                    "Never infer a payment from availability, checkout readiness, "
+                    "or analytics."
+                ),
+                window_days=3650,
+                autonomy_class=classify_action(action_kind, 0),
+                hours=0,
+                cost_usd=0,
+                measurement_source=measurement_source,
+            )
+            detail = (
+                "Prepared a zero-cost local lane; no revenue has been observed. "
+                "Only explicit owner-verified evidence may populate it."
+            )
+            store.update_experiment_status(experiment_id, "measuring", result=detail)
+            store.add_experiment_event(experiment_id, "measuring", detail)
+            existing.add(key)
+            created += 1
+        return created
+
     def process_observation_inbox(self):
         artifact_root = os.environ.get(
             "MA_ARTIFACT_ROOT", os.path.join(HERE, "artifacts")
@@ -842,6 +904,7 @@ class Agent:
         store.set_meta("state", "working")
         self.bootstrap_owned_health_checks()
         self.bootstrap_owned_checkout_checks()
+        self.bootstrap_owned_revenue_lanes()
         self.process_observation_inbox()
         self.monitor_experiments()
         if self.export_next_experiment() is not None:

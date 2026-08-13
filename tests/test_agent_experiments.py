@@ -136,6 +136,7 @@ class AgentExperimentTest(unittest.TestCase):
         agent.over_budget = lambda: False
         agent.bootstrap_owned_health_checks = lambda: calls.append("bootstrap")
         agent.bootstrap_owned_checkout_checks = lambda: calls.append("checkout")
+        agent.bootstrap_owned_revenue_lanes = lambda: calls.append("revenue")
         agent.process_observation_inbox = lambda: calls.append("inbox")
         agent.monitor_experiments = lambda: calls.append("monitor")
         agent.export_next_experiment = lambda: calls.append("export") or {"id": 1}
@@ -144,8 +145,42 @@ class AgentExperimentTest(unittest.TestCase):
         agent.tick()
 
         self.assertEqual(
-            calls, ["bootstrap", "checkout", "inbox", "monitor", "export"]
+            calls,
+            ["bootstrap", "checkout", "revenue", "inbox", "monitor", "export"],
         )
+
+    def test_owned_project_revenue_lane_is_safe_and_bootstrapped_once(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        agent.profile = {
+            "owned_projects": [
+                {"name": "FunnelSleuth", "url": "https://example.com"},
+                {"name": "", "url": "https://ignored.example"},
+                "not-a-project",
+            ]
+        }
+
+        first = agent.bootstrap_owned_revenue_lanes()
+        second = agent.bootstrap_owned_revenue_lanes()
+
+        self.assertEqual(first, 1)
+        self.assertEqual(second, 0)
+        experiments = self.store.list_experiments()
+        self.assertEqual(len(experiments), 1)
+        lane = experiments[0]
+        self.assertEqual(lane["project"], "FunnelSleuth")
+        self.assertEqual(lane["action_kind"], "prepare_verified_revenue_lane")
+        self.assertEqual(lane["metric"], "verified_payment")
+        self.assertEqual(lane["measurement_source"], "owner_verified")
+        self.assertEqual(lane["autonomy_class"], "AUTO_LOCAL")
+        self.assertEqual(lane["status"], "measuring")
+        self.assertEqual(lane["cost_usd"], 0)
+        self.assertEqual(self.store.list_observations(lane["id"]), [])
+        self.assertEqual(self.store.verified_revenue_summary()["total_usd"], 0)
+
+        self.assertIsNone(self.store.claim_experiment())
 
     def test_owned_project_health_check_is_bootstrapped_once(self):
         import money_agent.agent as agent_module

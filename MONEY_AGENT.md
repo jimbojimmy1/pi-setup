@@ -255,6 +255,42 @@ A positive analytics metric can verify that experiment's declared metric. It
 does not prove a sale and is never labeled as revenue. Positive revenue still
 requires `payment_provider_readonly` or `owner_verified` evidence.
 
+### Owner-verified revenue lane
+
+On its first tick, the daemon prepares one zero-cost local evidence lane for
+each named project in `profile.json`. The lane uses action
+`prepare_verified_revenue_lane`, metric `verified_payment`, and source
+`owner_verified`. It starts in `measuring`, contains no observation, asserts no
+revenue, and is not exported as a work package. It does not connect to Stripe,
+PayPal, a bank, or any other account.
+
+After independently confirming a real payment, find that project's lane ID in
+`/api/state` and import an observation with the exact contract below. Use a
+stable non-secret receipt or transaction reference; never put credentials,
+customer personal data, access tokens, or checkout URLs in the payload.
+
+```json
+{
+  "experiment_id": 12,
+  "source_kind": "owner_verified",
+  "metric": "verified_payment",
+  "value": 1,
+  "evidence_ref": "owner:receipt-79",
+  "observed_at": 1800000000,
+  "revenue_usd": 79,
+  "outcome": "won",
+  "window_complete": false
+}
+```
+
+`outcome` can remain `measuring` for ordinary payment entries. Setting the
+first confirmed payment to `won` also records the existing evidence-backed
+lesson for the project. The same source and evidence reference is idempotent.
+The owner must verify the payment before importing it; preparing this lane does
+not make a typed claim true. A future provider adapter must use a separately
+configured `payment_provider_readonly` lane and still needs explicit approval
+before any account connection.
+
 ### Observation inbox
 
 An approved read-only adapter can deposit the same JSON contract at:

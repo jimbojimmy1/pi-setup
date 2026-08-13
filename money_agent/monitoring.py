@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from html.parser import HTMLParser
 import ipaddress
+import math
 import socket
 import ssl
 import time
@@ -461,6 +462,10 @@ def ingest_observation(
         observed = float(time.time() if observed_at is None else observed_at)
     except (TypeError, ValueError) as exc:
         raise MonitoringError("evidence values must be numeric") from exc
+    if not all(math.isfinite(item) for item in (numeric_value, numeric_revenue, observed)):
+        raise MonitoringError("evidence values must be finite")
+    if observed <= 0:
+        raise MonitoringError("observation time must be positive")
     if numeric_revenue < 0:
         raise MonitoringError("observed revenue cannot be negative")
     if numeric_revenue > 0 and source_kind not in REVENUE_SOURCES:
@@ -522,9 +527,14 @@ def ingest_observation(
     if target_status in TERMINAL_STATUSES and current_status != target_status:
         store.add_experiment_event(experiment_id, target_status, detail)
         if target_status == "won":
+            payment_detail = (
+                f" with ${numeric_revenue:.2f} in {source_kind} payment evidence"
+                if numeric_revenue > 0
+                else ""
+            )
             lesson = (
                 f"Verified experiment win for {experiment['project']}: "
-                f"{metric} reached {numeric_value:g}; preserve the tested "
+                f"{metric} reached {numeric_value:g}{payment_detail}; preserve the tested "
                 "mechanism before changing it."
             )
         else:

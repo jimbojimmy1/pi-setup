@@ -118,6 +118,28 @@ class MonitoringTest(unittest.TestCase):
                 observed_at=1000,
             )
 
+    def test_nonfinite_evidence_values_fail_closed(self):
+        from money_agent.monitoring import MonitoringError, ingest_observation
+
+        experiment_id = self.add_experiment()
+        for field, invalid in (
+            ("value", float("nan")),
+            ("revenue_usd", float("inf")),
+            ("observed_at", float("-inf")),
+        ):
+            evidence = {
+                "experiment_id": experiment_id,
+                "source_kind": "analytics_readonly",
+                "metric": "qualified runs",
+                "value": 1,
+                "revenue_usd": 0,
+                "evidence_ref": f"analytics:nonfinite-{field}",
+                "observed_at": 1000,
+            }
+            evidence[field] = invalid
+            with self.subTest(field=field), self.assertRaises(MonitoringError):
+                ingest_observation(**evidence)
+
     def test_unknown_or_mismatched_source_fails_closed(self):
         from money_agent.monitoring import MonitoringError, ingest_observation
 

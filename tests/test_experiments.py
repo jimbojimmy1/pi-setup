@@ -16,6 +16,9 @@ class ExperimentPolicyTest(unittest.TestCase):
 
         self.assertEqual(classify_action("write_brief", 0), "AUTO_LOCAL")
         self.assertEqual(
+            classify_action("prepare_verified_revenue_lane", 0), "AUTO_LOCAL"
+        )
+        self.assertEqual(
             classify_action("build_owned_asset", 0),
             "CODEX_REVIEWED",
         )
