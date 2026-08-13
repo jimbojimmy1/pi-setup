@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from html.parser import HTMLParser
 import ipaddress
 import socket
 import ssl
@@ -23,6 +24,11 @@ ALLOWED_SOURCES = {
 }
 REVENUE_SOURCES = {"owner_verified", "payment_provider_readonly"}
 TERMINAL_STATUSES = {"won", "lost"}
+STRIPE_PAYMENT_HOSTS = {
+    "book.stripe.com",
+    "buy.stripe.com",
+    "donate.stripe.com",
+}
 
 
 class MonitoringError(ValueError):
@@ -125,6 +131,94 @@ def _tls_head(host, address, path, timeout, max_response_bytes):
     return status
 
 
+def _tls_get_html(host, address, path, timeout, max_response_bytes):
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}\r\n"
+        "User-Agent: money-agent-checkout-readiness/1\r\n"
+        "Accept: text/html\r\n"
+        "Accept-Encoding: identity\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode("ascii")
+    context = ssl.create_default_context()
+    with socket.create_connection((address, 443), timeout=float(timeout)) as raw:
+        with context.wrap_socket(raw, server_hostname=host) as secured:
+            secured.settimeout(float(timeout))
+            secured.sendall(request)
+            response = bytearray()
+            while len(response) < int(max_response_bytes):
+                chunk = secured.recv(min(4096, int(max_response_bytes) - len(response)))
+                if not chunk:
+                    break
+                response.extend(chunk)
+    head, separator, body = bytes(response).partition(b"\r\n\r\n")
+    if not separator:
+        raise MonitoringError("monitor target returned incomplete HTTP headers")
+    lines = head.split(b"\r\n")
+    parts = lines[0].split(b" ", 2)
+    if len(parts) < 2 or not parts[0].startswith(b"HTTP/"):
+        raise MonitoringError("monitor target returned an invalid HTTP response")
+    try:
+        status = int(parts[1])
+    except ValueError as exc:
+        raise MonitoringError("monitor target returned an invalid HTTP status") from exc
+    content_type = ""
+    for line in lines[1:]:
+        name, marker, value = line.partition(b":")
+        if marker and name.strip().lower() == b"content-type":
+            content_type = value.strip().decode("ascii", errors="ignore").lower()
+            break
+    return status, content_type, body
+
+
+def _checkout_provider(destination: str) -> str | None:
+    try:
+        parsed = urlsplit(str(destination).strip())
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+    ):
+        return None
+    host = parsed.hostname.lower()
+    if host in STRIPE_PAYMENT_HOSTS and parsed.path not in ("", "/"):
+        return "stripe"
+    if host == "paypal.me" and parsed.path not in ("", "/"):
+        return "paypal"
+    if host in ("paypal.com", "www.paypal.com") and parsed.path.startswith(
+        "/ncp/payment/"
+    ):
+        return "paypal"
+    return None
+
+
+class _CheckoutDestinationParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.provider = None
+
+    def handle_starttag(self, tag, attrs):
+        if self.provider is not None:
+            return
+        attribute = "href" if tag.lower() == "a" else "action" if tag.lower() == "form" else None
+        if attribute is None:
+            return
+        values = dict(attrs)
+        self.provider = _checkout_provider(values.get(attribute, ""))
+
+
+def checkout_provider_from_html(html: str) -> str | None:
+    """Return a provider only for a recognized actionable checkout destination."""
+    parser = _CheckoutDestinationParser()
+    parser.feed(str(html))
+    return parser.provider
+
+
 def probe_public_https(
     url: str,
     *,
@@ -149,6 +243,40 @@ def probe_public_https(
         "url": target["url"],
         "status": int(status),
         "available": 200 <= int(status) < 400,
+    }
+
+
+def probe_checkout_readiness(
+    url: str,
+    *,
+    resolver=socket.getaddrinfo,
+    connector=_tls_get_html,
+    timeout=10,
+    max_response_bytes=65_536,
+) -> dict:
+    """Inspect one bounded owned HTML page without following checkout links."""
+    target = _validated_https_target(url, resolver=resolver)
+    try:
+        status, content_type, body = connector(
+            target["host"],
+            target["addresses"][0],
+            target["path"],
+            max(1, min(float(timeout), 30)),
+            max(1024, min(int(max_response_bytes), 65_536)),
+        )
+        provider = None
+        if 200 <= int(status) < 300 and str(content_type).startswith("text/html"):
+            provider = checkout_provider_from_html(
+                bytes(body).decode("utf-8", errors="replace")
+            )
+    except (OSError, ssl.SSLError, MonitoringError, TypeError, ValueError):
+        status = 0
+        provider = None
+    return {
+        "url": target["url"],
+        "status": int(status),
+        "ready": provider is not None,
+        "provider": provider,
     }
 
 
@@ -199,6 +327,61 @@ def collect_public_health(
         source_kind="public_http",
         metric="public_availability",
         value=1 if probe["available"] else 0,
+        revenue_usd=0,
+        evidence_ref=evidence_ref,
+        observed_at=observed_at,
+        outcome=None,
+        window_complete=False,
+    )
+
+
+def collect_checkout_readiness(
+    experiment_id: int,
+    *,
+    now: float | None = None,
+    bucket_seconds=3600,
+    resolver=socket.getaddrinfo,
+    connector=_tls_get_html,
+) -> dict:
+    """Record at most one checkout-readiness observation per time bucket."""
+    experiment = store.get_experiment(experiment_id)
+    if experiment is None:
+        raise MonitoringError("experiment does not exist")
+    source = str(experiment.get("measurement_source") or "").strip()
+    if configured_source_kind(source) != "public_http":
+        raise MonitoringError("experiment does not use a public source")
+    if experiment["metric"].strip() != "checkout_readiness":
+        raise MonitoringError("checkout experiments must use checkout_readiness")
+
+    target_url = source.removeprefix("public_http:")
+    normalized = validate_public_https_url(target_url, resolver=resolver)
+    observed_at = float(time.time() if now is None else now)
+    interval = max(60, min(int(bucket_seconds), 86_400))
+    bucket = int(observed_at // interval)
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
+    evidence_ref = f"checkout-readiness:{digest}:{bucket}"
+    existing = next(
+        (
+            observation
+            for observation in store.list_observations(experiment_id)
+            if observation["source_kind"] == "public_http"
+            and observation["evidence_ref"] == evidence_ref
+        ),
+        None,
+    )
+    if existing is not None:
+        return existing
+
+    probe = probe_checkout_readiness(
+        normalized,
+        resolver=resolver,
+        connector=connector,
+    )
+    return ingest_observation(
+        experiment_id=experiment_id,
+        source_kind="public_http",
+        metric="checkout_readiness",
+        value=1 if probe["ready"] else 0,
         revenue_usd=0,
         evidence_ref=evidence_ref,
         observed_at=observed_at,

@@ -135,6 +135,7 @@ class AgentExperimentTest(unittest.TestCase):
 
         agent.over_budget = lambda: False
         agent.bootstrap_owned_health_checks = lambda: calls.append("bootstrap")
+        agent.bootstrap_owned_checkout_checks = lambda: calls.append("checkout")
         agent.process_observation_inbox = lambda: calls.append("inbox")
         agent.monitor_experiments = lambda: calls.append("monitor")
         agent.export_next_experiment = lambda: calls.append("export") or {"id": 1}
@@ -142,7 +143,9 @@ class AgentExperimentTest(unittest.TestCase):
 
         agent.tick()
 
-        self.assertEqual(calls, ["bootstrap", "inbox", "monitor", "export"])
+        self.assertEqual(
+            calls, ["bootstrap", "checkout", "inbox", "monitor", "export"]
+        )
 
     def test_owned_project_health_check_is_bootstrapped_once(self):
         import money_agent.agent as agent_module
@@ -198,6 +201,66 @@ class AgentExperimentTest(unittest.TestCase):
 
         with patch.object(agent_module, "monitor_experiment") as validate:
             with patch.object(agent_module, "collect_public_health") as collect:
+                monitored = agent.monitor_experiments()
+
+        self.assertEqual(monitored, 1)
+        validate.assert_called_once_with(experiment_id)
+        collect.assert_called_once_with(experiment_id)
+
+    def test_owned_project_checkout_check_is_bootstrapped_once(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        agent.profile = {
+            "owned_projects": [
+                {"name": "FunnelSleuth", "url": "https://funnelsleuth.example/"}
+            ]
+        }
+
+        with patch.object(
+            agent_module,
+            "validate_public_https_url",
+            return_value="https://funnelsleuth.example/",
+        ):
+            first = agent.bootstrap_owned_checkout_checks()
+            second = agent.bootstrap_owned_checkout_checks()
+
+        self.assertEqual(first, 1)
+        self.assertEqual(second, 0)
+        experiments = self.store.list_experiments()
+        self.assertEqual(len(experiments), 1)
+        self.assertEqual(experiments[0]["action_kind"], "checkout_readiness_check")
+        self.assertEqual(experiments[0]["metric"], "checkout_readiness")
+        self.assertEqual(experiments[0]["autonomy_class"], "AUTO_LOCAL")
+        self.assertEqual(experiments[0]["cost_usd"], 0)
+
+    def test_monitoring_dispatches_checkout_readiness_metric(self):
+        import money_agent.agent as agent_module
+
+        agent_module = importlib.reload(agent_module)
+        agent = agent_module.Agent.__new__(agent_module.Agent)
+        idea_id = self.store.add_idea("FunnelSleuth checkout")
+        experiment_id = self.store.add_experiment(
+            idea_id=idea_id,
+            project="FunnelSleuth",
+            action_kind="checkout_readiness_check",
+            hypothesis="The public page exposes checkout.",
+            deliverable="Inspect the public page.",
+            metric="checkout_readiness",
+            stop_condition="Keep the owner blocker until ready.",
+            window_days=30,
+            autonomy_class="AUTO_LOCAL",
+            hours=0,
+            cost_usd=0,
+            measurement_source="public_http:https://example.com/offers",
+        )
+
+        with patch.object(agent_module, "monitor_experiment") as validate:
+            validate.return_value = self.store.get_experiment(experiment_id)
+            with patch.object(
+                agent_module, "collect_checkout_readiness"
+            ) as collect:
                 monitored = agent.monitor_experiments()
 
         self.assertEqual(monitored, 1)

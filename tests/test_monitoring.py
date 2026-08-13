@@ -274,6 +274,108 @@ class MonitoringTest(unittest.TestCase):
             [("example.com", "93.184.216.34", "/health?probe=1", 7, 2048)],
         )
 
+    def test_checkout_detector_accepts_only_recognized_https_destinations(self):
+        from money_agent.monitoring import checkout_provider_from_html
+
+        accepted = {
+            '<a href="https://buy.stripe.com/live_123">Buy</a>': "stripe",
+            '<form action="https://book.stripe.com/book_123"></form>': "stripe",
+            '<a href="https://donate.stripe.com/give_123">Give</a>': "stripe",
+            '<a href="https://paypal.me/FunnelSleuth/79">Pay</a>': "paypal",
+            '<a href="https://www.paypal.com/ncp/payment/ABC123">Pay</a>': "paypal",
+        }
+        for html, provider in accepted.items():
+            with self.subTest(html=html):
+                self.assertEqual(checkout_provider_from_html(html), provider)
+
+        rejected = (
+            "Stripe and PayPal accepted here",
+            '<script>location="https://buy.stripe.com/not-a-link"</script>',
+            '<a href="http://buy.stripe.com/insecure">Buy</a>',
+            '<a href="https://buy.stripe.com.evil.example/phish">Buy</a>',
+            '<a href="https://www.paypal.com/us/home">PayPal</a>',
+            '<a href="/checkout">Checkout</a>',
+        )
+        for html in rejected:
+            with self.subTest(html=html):
+                self.assertIsNone(checkout_provider_from_html(html))
+
+    def test_checkout_probe_is_one_bounded_get_without_redirect_follow(self):
+        from money_agent.monitoring import probe_checkout_readiness
+
+        calls = []
+
+        def resolver(host, port, type=0):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+        def connector(host, address, path, timeout, max_response_bytes):
+            calls.append((host, address, path, timeout, max_response_bytes))
+            return 200, "text/html; charset=utf-8", (
+                b'<a href="https://buy.stripe.com/live_123">Buy</a>'
+            )
+
+        result = probe_checkout_readiness(
+            "https://example.com/offers?source=home",
+            resolver=resolver,
+            connector=connector,
+            timeout=99,
+            max_response_bytes=999_999,
+        )
+
+        self.assertEqual(
+            calls,
+            [("example.com", "93.184.216.34", "/offers?source=home", 30, 65_536)],
+        )
+        self.assertEqual(
+            result,
+            {
+                "url": "https://example.com/offers?source=home",
+                "status": 200,
+                "ready": True,
+                "provider": "stripe",
+            },
+        )
+
+    def test_checkout_collection_is_hourly_and_never_reports_revenue(self):
+        from money_agent.monitoring import collect_checkout_readiness
+
+        idea_id = self.store.add_idea("Checkout readiness")
+        experiment_id = self.store.add_experiment(
+            idea_id=idea_id,
+            project="FunnelSleuth",
+            action_kind="checkout_readiness_check",
+            hypothesis="The public offer exposes checkout.",
+            deliverable="Check the public offer page.",
+            metric="checkout_readiness",
+            stop_condition="Keep the owner blocker until ready.",
+            window_days=30,
+            autonomy_class="AUTO_LOCAL",
+            hours=0,
+            cost_usd=0,
+            measurement_source="public_http:https://example.com/offers",
+        )
+
+        def resolver(host, port, type=0):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+        calls = []
+
+        def connector(host, address, path, timeout, max_response_bytes):
+            calls.append(address)
+            return 200, "text/html", b'<a href="https://paypal.me/store/79">Pay</a>'
+
+        first = collect_checkout_readiness(
+            experiment_id, now=7201, resolver=resolver, connector=connector
+        )
+        second = collect_checkout_readiness(
+            experiment_id, now=7250, resolver=resolver, connector=connector
+        )
+
+        self.assertEqual(first["id"], second["id"])
+        self.assertEqual(first["value"], 1)
+        self.assertEqual(first["revenue_usd"], 0)
+        self.assertEqual(calls, ["93.184.216.34"])
+
     def test_health_collection_is_one_availability_observation_per_bucket(self):
         from money_agent.monitoring import collect_public_health
 
