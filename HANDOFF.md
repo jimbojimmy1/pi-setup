@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-12 21:13 (America/New_York)
+Updated: 2026-08-13 00:30 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `ae02000`
+- Latest implementation commit before this handoff update: `c50fb31`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `f3172e7`
+- Remote PR head before this update: `6452753` (new local commits not yet pushed)
 
 ## Implemented architecture
 
@@ -68,6 +68,15 @@ impersonating the owner.
 - The dashboard now shows checkout readiness per matching project experiment.
   Missing or zero evidence retains the payment-link blocker; positive matching
   evidence clears only that warning, never other blockers or revenue status.
+- Each install now records the exact copied revision in `release.txt`; cloned
+  installs flag dirty worktrees and standalone installs require an immutable
+  full commit SHA instead of a moving branch or tag.
+- The release marker is invalidated before runtime replacement and published
+  only after all files install, so a partial upgrade cannot retain stale
+  `current` provenance.
+- The dashboard compares the installed marker only with an optional
+  operator-configured reviewed SHA. It reports `current`, `outdated`, `dirty`,
+  or `unknown` and never treats a mutable ref as proof of deployment.
 
 ## Current owned revenue project
 
@@ -84,6 +93,8 @@ impersonating the owner.
 - Checkout readiness evidence: the bounded probe returned HTTP 200 but found no
   recognized Stripe or PayPal destination on 2026-08-12; the owner checkout
   blocker remains active
+- Installed Raspberry Pi release: unknown. These repository changes have not
+  been deployed or used to restart either service in this workstream.
 
 The daemon may prepare and implement bounded owned-site experiments. It must not
 spend money, contact people, create accounts, change payment or payout settings,
@@ -102,11 +113,13 @@ Latest combined verification before this documentation update:
 - Git Bash `bash -n setup-money-agent.sh`: exit 0
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- Python 3.11 `python -m unittest discover -s tests -v`: 53 tests passed in
-  1.270 seconds
+- Python 3.11 `python -m unittest discover -s tests -v`: 56 tests passed in
+  6.379 seconds
 - `git diff --check`: exit 0
-- GitHub Actions run `31645803074`: all steps passed; the workflow was then
-  moved to the Node 24 action releases to remove its runtime deprecation warning
+- Installer tests also cover immutable standalone provenance and stale-marker
+  invalidation after an injected partial-upgrade failure.
+- GitHub Actions run `31657063786`: all steps passed for remote head `6452753`;
+  checks for the new commits must pass after push.
 
 ## Commits added in this workstream
 
@@ -143,11 +156,16 @@ Latest combined verification before this documentation update:
 - `b2f50e9` monitor public checkout readiness
 - `b7533b2` plan checkout dashboard status
 - `ae02000` show checkout readiness on the dashboard
+- `f2b8120` plan runtime release status
+- `99c00a1` track installed runtime release
+- `c50fb31` keep release provenance fail closed
 
 ## Next action
 
-Record the installed runtime revision and show whether the Raspberry Pi is
-running this PR's current release, so repository progress is not confused with
-deployed automation. Do not deploy, restart services, connect financial or
-analytics accounts, follow checkout links, send alerts/messages, or request
-credentials without explicit owner approval.
+Prepare a non-mutating deployment preflight that prints the exact reviewed
+commit, current installed marker when run locally on the Pi, required upgrade
+and rollback commands, and service names without executing any of them. This
+should make one explicit owner approval sufficient for a recoverable upgrade.
+Do not deploy, restart services, connect financial or analytics accounts,
+follow checkout links, send alerts/messages, or request credentials without
+explicit owner approval.
