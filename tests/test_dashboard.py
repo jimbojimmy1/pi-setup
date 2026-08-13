@@ -131,6 +131,105 @@ class DashboardStateTest(unittest.TestCase):
         self.assertIn("available", template)
         self.assertIn("unavailable", template)
 
+    def _add_checkout_experiment(self):
+        idea_id = self.store.add_idea("FunnelSleuth checkout readiness")
+        return self.store.add_experiment(
+            idea_id=idea_id,
+            project="FunnelSleuth",
+            action_kind="checkout_readiness_check",
+            hypothesis="The public page exposes checkout.",
+            deliverable="Inspect the public page.",
+            metric="checkout_readiness",
+            stop_condition="Keep the owner blocker until ready.",
+            window_days=30,
+            autonomy_class="AUTO_LOCAL",
+            hours=0,
+            cost_usd=0,
+            measurement_source="public_http:https://example.com/offers",
+        )
+
+    def _state(self, now=2100):
+        import money_agent.app as app_module
+
+        app_module = importlib.reload(app_module)
+        with patch.object(app_module.time, "time", return_value=now):
+            response = app_module.app.test_client().get("/api/state")
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()
+
+    def test_missing_or_zero_checkout_evidence_keeps_project_blocker(self):
+        experiment_id = self._add_checkout_experiment()
+
+        missing = self._state()
+        self.assertEqual(
+            missing["checkout_readiness"],
+            [
+                {
+                    "project": "FunnelSleuth",
+                    "ready": None,
+                    "observed_at": None,
+                    "age": "never",
+                }
+            ],
+        )
+        self.assertTrue(
+            any(
+                blocker["action"]
+                == "Connect the existing Stripe or PayPal checkout link."
+                for blocker in missing["owner_blockers"]
+            )
+        )
+
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=0,
+            revenue_usd=0,
+            evidence_ref="checkout-readiness:zero",
+            observed_at=1500,
+        )
+        zero = self._state()
+        self.assertFalse(zero["checkout_readiness"][0]["ready"])
+        self.assertEqual(zero["checkout_readiness"][0]["age"], "10m ago")
+        self.assertTrue(
+            any("checkout link" in blocker["action"] for blocker in zero["owner_blockers"])
+        )
+
+    def test_positive_matching_checkout_evidence_clears_only_link_blocker(self):
+        experiment_id = self._add_checkout_experiment()
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="checkout-readiness:ready",
+            observed_at=1500,
+        )
+
+        payload = self._state()
+
+        self.assertTrue(payload["checkout_readiness"][0]["ready"])
+        self.assertFalse(
+            any("checkout link" in blocker["action"] for blocker in payload["owner_blockers"])
+        )
+
+    def test_template_renders_checkout_status_without_payment_claim(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "money_agent"
+            / "templates"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("CHECKOUT READINESS", template)
+        self.assertIn("d.checkout_readiness", template)
+        self.assertIn("checkout link detected", template)
+        self.assertIn("checkout link not detected", template)
+        self.assertIn("no checkout evidence", template)
+        self.assertIn("not a payment", template)
+
 
 if __name__ == "__main__":
     unittest.main()

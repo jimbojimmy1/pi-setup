@@ -102,6 +102,11 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid rgba(212,160,23,.25
     <h2>▸ PUBLIC AVAILABILITY</h2>
     <div id="availability" class="muted">no availability evidence</div>
   </div>
+
+  <div class="panel">
+    <h2>▸ CHECKOUT READINESS</h2>
+    <div id="checkout" class="muted">no checkout evidence</div>
+  </div>
 </div>
 
 <div class="grid">
@@ -192,6 +197,10 @@ async function poll(){
   document.getElementById('availability').innerHTML = d.availability
     ? `<span class="dot ${d.availability.available?'':'bad'}"></span>${d.availability.available?'available':'unavailable'} · checked ${esc(d.availability.age)}`
     : 'no availability evidence';
+
+  document.getElementById('checkout').innerHTML = d.checkout_readiness.length
+    ? d.checkout_readiness.map(x=>`<div style="margin-bottom:8px"><span class="dot ${x.ready===true?'':x.ready===false?'bad':'warn'}"></span>${esc(x.project)} · ${x.ready===true?'checkout link detected':x.ready===false?'checkout link not detected':'no checkout evidence'} · checked ${esc(x.age)}<br><span class="meta">Readiness is not a payment or revenue evidence.</span></div>`).join('')
+    : 'no checkout evidence · readiness is not a payment';
 
   document.getElementById('board').innerHTML = d.leaderboard.map(i=>`
     <tr class="clickable" onclick="openIdea(${i.id})">

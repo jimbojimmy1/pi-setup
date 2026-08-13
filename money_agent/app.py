@@ -92,13 +92,55 @@ def _latest_availability(observations):
     return None
 
 
-def _owner_blockers(experiments):
+def _checkout_readiness(experiments, observations):
+    newest = {}
+    for observation in observations:
+        if (
+            observation["source_kind"] == "public_http"
+            and observation["metric"] == "checkout_readiness"
+        ):
+            newest.setdefault(observation["experiment_id"], observation)
+    statuses = []
+    seen_projects = set()
+    for experiment in experiments:
+        if experiment["action_kind"] != "checkout_readiness_check":
+            continue
+        project = experiment["project"]
+        if project in seen_projects:
+            continue
+        seen_projects.add(project)
+        observation = newest.get(experiment["id"])
+        observed_at = (
+            None if observation is None else float(observation["observed_at"])
+        )
+        statuses.append(
+            {
+                "project": project,
+                "ready": (
+                    None if observation is None else float(observation["value"]) > 0
+                ),
+                "observed_at": observed_at,
+                "age": "never" if observed_at is None else ago(observed_at),
+            }
+        )
+    return statuses
+
+
+def _owner_blockers(experiments, checkout_readiness):
+    checkout_statuses = checkout_readiness or [
+        {"project": "FunnelSleuth", "ready": None}
+    ]
     blockers = [
         {
-            "project": "FunnelSleuth",
+            "project": item["project"],
             "action": "Connect the existing Stripe or PayPal checkout link.",
-            "reason": "This requires an owner-authenticated payment account session.",
+            "reason": (
+                "No recognized checkout link has been observed on the public page. "
+                "Connecting one requires an owner-authenticated payment account session."
+            ),
         }
+        for item in checkout_statuses
+        if item["ready"] is not True
     ]
     blockers.extend(
         {
@@ -160,6 +202,7 @@ def api_state():
         {key: item[key] for key in PUBLIC_OBSERVATION_FIELDS}
         for item in store.list_observations()
     ]
+    checkout_readiness = _checkout_readiness(experiments, observations)
     return jsonify(
         {
             "state": store.get_meta("state", "starting"),
@@ -181,8 +224,9 @@ def api_state():
             "observations": observations,
             "inbox": _inbox_counts(),
             "availability": _latest_availability(observations),
+            "checkout_readiness": checkout_readiness,
             "next_work": _next_work(),
-            "owner_blockers": _owner_blockers(experiments),
+            "owner_blockers": _owner_blockers(experiments, checkout_readiness),
             "recent": [
                 {
                     "id": r["id"],
