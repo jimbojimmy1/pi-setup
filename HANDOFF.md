@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-13 01:33 (America/New_York)
+Updated: 2026-08-13 02:36 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `0f4488e`
+- Latest implementation commit before this handoff update: `59478aa`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `a508de2` (new local commits not yet pushed)
+- Remote PR head before this update: `e2d8c43` (new local commits not yet pushed)
 
 ## Implemented architecture
 
@@ -85,6 +85,15 @@ impersonating the owner.
 - Preflight tests use fail-fast command stubs to prove that inspection invokes
   no Git, network, installer, sudo, or systemctl action; malformed, binary,
   oversized, dirty, missing, and mutable release values fail closed.
+- The dashboard now answers the revenue question explicitly with an all-time
+  verified-revenue amount, payment-evidence count, and latest evidence age from
+  the complete observation ledger rather than its 100-row display window.
+- Revenue totals include only positive `payment_provider_readonly` and
+  `owner_verified` evidence, deduplicated across experiments by source/reference;
+  analytics, public checks, checkout readiness, forecasts, and spend are excluded.
+- Malformed historical rows fail closed by SQLite storage class, bounded evidence
+  reference, native numeric type, positivity, and finiteness before deduplication.
+  Invalid public timestamps are skipped so older valid health evidence remains.
 
 ## Current owned revenue project
 
@@ -92,6 +101,8 @@ impersonating the owner.
 - Live URL: https://funnelsleuth.stinkchimp.chatgpt.site
 - Existing offers: $79 audit and $299 Fix Sprint
 - Honest status: no observed revenue is recorded by this repository
+- Verified revenue recorded: `$0.00` from zero payment-evidence items. This is
+  not a live Stripe, PayPal, bank, payout, or profit balance.
 - Owner-required blocker: connect an existing Stripe or PayPal payment link from
   an authenticated owner session
 - Measurement blocker: no read-only Stripe, PayPal, or analytics adapter is
@@ -123,12 +134,12 @@ Latest combined verification before this documentation update:
   fail-closed cases passed
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- Python 3.11 `python -m unittest discover -s tests -q`: 57 tests passed in
-  3.996 seconds
+- Python 3.11 `python -m unittest discover -s tests -q`: 61 tests passed in
+  2.065 seconds
 - `git diff --check`: exit 0
 - Installer tests also cover immutable standalone provenance and stale-marker
   invalidation after an injected partial-upgrade failure.
-- GitHub Actions run `31667417133`: all steps passed for remote head `a508de2`;
+- GitHub Actions run `31670866328`: all steps passed for remote head `e2d8c43`;
   checks for the new commits must pass after push.
 
 ## Commits added in this workstream
@@ -173,12 +184,17 @@ Latest combined verification before this documentation update:
 - `dcede61` add read-only deployment preflight
 - `5d89c84` make deployment commands recoverable
 - `0f4488e` reject binary release markers
+- `3b2d30b` design verified revenue summary
+- `dbd6149` show verified revenue evidence
+- `9293d5d` reject malformed revenue evidence
+- `3c09bc8` validate revenue rows before deduplication
+- `59478aa` skip malformed public evidence times
 
 ## Next action
 
-Wait for explicit owner approval before running the preflight on the Pi or
-executing any command it prints. Until approval arrives, improve repository-only
-evidence and documentation without implying the Pi is current. Do not deploy,
-restart services, connect financial or analytics accounts, follow checkout
-links, send alerts/messages, or request credentials without explicit owner
-approval.
+Wait for explicit owner approval before running the preflight on the Pi,
+deploying the verified-revenue dashboard, or executing any command it prints.
+Until approval arrives, improve repository-only evidence and documentation
+without implying the Pi is current. Do not deploy, restart services, connect
+financial or analytics accounts, follow checkout links, send alerts/messages,
+or request credentials without explicit owner approval.
