@@ -52,7 +52,7 @@ output="$(cd "$tmp" && run_preflight)"
 printf -v quoted_root '%q' "$root"
 grep -Fx "  cd $quoted_root" <<<"$output"
 
-grep -F 'read -r -N 130' "$root/money-agent-deploy-preflight.sh"
+grep -F 'head -c 130' "$root/money-agent-deploy-preflight.sh"
 
 printf '%s\n' "$reviewed" > "$app/release.txt"
 output="$(run_preflight)"
@@ -76,6 +76,11 @@ grep -Fx 'INSTALLED_RELEASE: not-recorded' <<<"$output"
 grep -Fx 'STATUS: unknown' <<<"$output"
 
 printf '%s\n' '../../secret' > "$app/release.txt"
+output="$(run_preflight)"
+grep -Fx 'INSTALLED_RELEASE: invalid' <<<"$output"
+grep -Fx 'STATUS: unknown' <<<"$output"
+
+printf '\0\0%s\n' "$reviewed" > "$app/release.txt"
 output="$(run_preflight)"
 grep -Fx 'INSTALLED_RELEASE: invalid' <<<"$output"
 grep -Fx 'STATUS: unknown' <<<"$output"

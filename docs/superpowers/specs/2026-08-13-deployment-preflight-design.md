@@ -36,9 +36,11 @@ exact rollback sequence targeting that commit.
 
 ## Safety and failure handling
 
-The preflight uses shell built-ins for inspection and formatting. It does not
-invoke `git`, `curl`, the installer, `sudo`, or `systemctl`; those strings appear
-only in quoted output. Invalid arguments exit nonzero before reading local state.
+The preflight caps marker input at 130 bytes with read-only core utilities, then
+checks the Bash string length against the byte count so NUL or non-ASCII input
+cannot disappear during parsing. It does not invoke `git`, `curl`, the installer,
+`sudo`, or `systemctl`; those strings appear only in quoted output. Invalid
+arguments exit nonzero before reading local state.
 Paths and revisions are shell-escaped before inclusion in printed commands.
 
 The script never reads `config.env`, the database, artifacts, credentials, or

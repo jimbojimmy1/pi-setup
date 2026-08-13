@@ -2,6 +2,7 @@
 # Print a recoverable Money Agent deployment plan without executing it.
 
 set -euo pipefail
+export LC_ALL=C
 
 usage() {
   printf 'usage: %s FULL_REVIEWED_COMMIT_SHA\n' "${0##*/}" >&2
@@ -28,11 +29,15 @@ installed_label='not-recorded'
 status='unknown'
 
 if [ -f "$marker" ] && [ ! -L "$marker" ]; then
+  byte_count=''
   marker_chunk=''
-  IFS= read -r -N 130 marker_chunk < "$marker" || true
-  if [ "${#marker_chunk}" -le 129 ]; then
+  if byte_count="$(head -c 130 -- "$marker" | wc -c)" \
+    && [[ "$byte_count" =~ ^[0-9]+$ ]] \
+    && [ "$byte_count" -le 129 ]; then
+    IFS= read -r -N 130 marker_chunk < "$marker" || true
     marker_value="${marker_chunk%$'\n'}"
-    if [ "${#marker_value}" -le 128 ] \
+    if [ "${#marker_chunk}" -eq "$byte_count" ] \
+      && [ "${#marker_value}" -le 128 ] \
       && { [[ "$marker_value" =~ ^[0-9a-fA-F]{40}(-dirty)?$ ]] \
         || [ "$marker_value" = 'local-unversioned' ]; }; then
       installed="${marker_value,,}"
