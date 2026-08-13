@@ -62,6 +62,7 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid rgba(212,160,23,.25
     <span>BACKEND <b id="backend">–</b></span>
     <span>SPEND TODAY <b id="spend">–</b></span>
     <span>ALL TIME <b id="total">–</b></span>
+    <span>VERIFIED REVENUE <b id="revenue">–</b></span>
     <span>ROUNDS <b id="rounds">–</b></span>
     <span>NEXT <b id="next">–</b></span>
   </div>
@@ -91,6 +92,11 @@ footer{margin-top:28px;padding-top:14px;border-top:1px solid rgba(212,160,23,.25
   <div class="panel">
     <h2>▸ VERIFIED OBSERVATIONS</h2>
     <div id="observations" class="muted">none</div>
+  </div>
+
+  <div class="panel">
+    <h2>▸ VERIFIED REVENUE RECORDED</h2>
+    <div id="verified-revenue" class="muted">$0.00 · no verified payment evidence recorded</div>
   </div>
 
   <div class="panel">
@@ -164,6 +170,7 @@ async function poll(){
   document.getElementById('backend').textContent = d.backend + ' / ' + d.model;
   document.getElementById('spend').textContent = '$'+d.spend_today.toFixed(2)+' / $'+d.daily_cap.toFixed(2);
   document.getElementById('total').textContent = '$'+d.spend_total.toFixed(2);
+  document.getElementById('revenue').textContent = '$'+d.verified_revenue.total_usd.toFixed(2)+' · '+d.verified_revenue.payments;
   document.getElementById('rounds').textContent = d.counts.rounds ?? 0;
   document.getElementById('next').textContent = d.next_tick_in>0 ? d.next_tick_in+'s' : 'now';
 
@@ -195,6 +202,10 @@ async function poll(){
     ? d.observations.map(o=>`<div style="margin-bottom:8px">— ${esc(o.metric)}: ${o.value}
         <span class="meta">${esc(o.source_kind)}${o.revenue_usd>0?' · observed payment $'+o.revenue_usd.toFixed(2):''}</span></div>`).join('')
     : 'none';
+
+  document.getElementById('verified-revenue').innerHTML = d.verified_revenue.payments
+    ? `$${d.verified_revenue.total_usd.toFixed(2)} verified revenue recorded · ${d.verified_revenue.payments} payment evidence item${d.verified_revenue.payments===1?'':'s'} · latest ${esc(d.verified_revenue.age)}`
+    : '$0.00 verified revenue recorded · no verified payment evidence';
 
   document.getElementById('inbox').textContent =
     `incoming ${d.inbox.incoming} · processing ${d.inbox.processing} · accepted ${d.inbox.accepted} · rejected ${d.inbox.rejected}`;

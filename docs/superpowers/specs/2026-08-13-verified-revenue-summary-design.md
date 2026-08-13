@@ -21,10 +21,11 @@ non-payment signals.
 
 `store.verified_revenue_summary()` aggregates observations with a positive
 `revenue_usd` only when `source_kind` is `payment_provider_readonly` or
-`owner_verified`. The observation table already deduplicates evidence by
-experiment, source, and evidence reference, so one accepted payment event is
-counted once. The query covers the full ledger rather than the bounded dashboard
-observation list.
+`owner_verified`. The query groups by source and evidence reference across
+experiments, so attaching the same accepted payment event to multiple experiments
+still counts once. If duplicate rows disagree on amount, the lower positive
+amount is used to avoid overstating revenue. The query covers the full ledger
+rather than the bounded dashboard observation list.
 
 The result contains:
 

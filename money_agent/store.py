@@ -491,6 +491,27 @@ def list_observations(experiment_id=None, limit=100):
     return [dict(row) for row in rows]
 
 
+def verified_revenue_summary():
+    row = conn().execute(
+        "SELECT COALESCE(SUM(revenue_usd), 0) AS total_usd,"
+        " COUNT(*) AS payments, MAX(observed_at) AS last_observed_at"
+        " FROM (SELECT source_kind, evidence_ref, MIN(revenue_usd) AS revenue_usd,"
+        " MAX(observed_at) AS observed_at FROM observations"
+        " WHERE revenue_usd > 0 AND source_kind IN (?, ?)"
+        " GROUP BY source_kind, evidence_ref)",
+        ("payment_provider_readonly", "owner_verified"),
+    ).fetchone()
+    return {
+        "total_usd": float(row["total_usd"] or 0),
+        "payments": int(row["payments"] or 0),
+        "last_observed_at": (
+            None
+            if row["last_observed_at"] is None
+            else float(row["last_observed_at"])
+        ),
+    }
+
+
 # ---------- rounds ----------
 def add_round(idea_id, n, bull, bear, judge, verdict, score):
     now = time.time()

@@ -74,6 +74,68 @@ class DashboardStateTest(unittest.TestCase):
         self.assertNotIn("evidence_ref", payload["observations"][0])
         self.assertNotIn("must-not-appear", response.get_data(as_text=True))
 
+    def test_state_reports_zero_when_no_verified_payment_is_recorded(self):
+        payload = self._state()
+
+        self.assertEqual(
+            payload["verified_revenue"],
+            {
+                "total_usd": 0.0,
+                "payments": 0,
+                "last_observed_at": None,
+                "age": "never",
+            },
+        )
+
+    def test_state_summarizes_only_permitted_payment_evidence(self):
+        experiment_id = self.store.list_experiments()[0]["id"]
+        for source_kind, amount, evidence_ref, observed_at in (
+            ("payment_provider_readonly", 79, "payment:79", 1400),
+            ("owner_verified", 299, "owner:299", 1500),
+            ("analytics_readonly", 999, "analytics:not-revenue", 2000),
+        ):
+            self.store.add_observation(
+                experiment_id=experiment_id,
+                source_kind=source_kind,
+                metric="qualified runs in FunnelSleuth analytics",
+                value=1,
+                revenue_usd=amount,
+                evidence_ref=evidence_ref,
+                observed_at=observed_at,
+            )
+
+        payload = self._state(now=2100)
+
+        self.assertEqual(
+            payload["verified_revenue"],
+            {
+                "total_usd": 378.0,
+                "payments": 2,
+                "last_observed_at": 1500.0,
+                "age": "10m ago",
+            },
+        )
+        analytics = next(
+            item
+            for item in payload["observations"]
+            if item["source_kind"] == "analytics_readonly"
+            and item["observed_at"] == 2000
+        )
+        self.assertEqual(analytics["revenue_usd"], 0)
+
+    def test_template_renders_verified_revenue_as_recorded_evidence(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "money_agent"
+            / "templates"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("VERIFIED REVENUE", template)
+        self.assertIn("d.verified_revenue", template)
+        self.assertIn("verified revenue recorded", template)
+        self.assertIn("payment evidence", template)
+
     def test_state_exposes_inbox_counts_and_latest_availability_without_file_details(self):
         artifacts = self.root / "artifacts"
         inbox = artifacts / "observation-inbox"

@@ -78,6 +78,40 @@ class ObservationStoreTest(unittest.TestCase):
             experiment["result"], "Latest verified metric: 3 qualified runs."
         )
 
+    def test_verified_revenue_summary_counts_only_deduplicated_payment_evidence(self):
+        experiment_id = self.add_experiment()
+        second_experiment_id = self.add_experiment()
+
+        observations = (
+            (experiment_id, "payment_provider_readonly", 79, "payment:79", 1000),
+            (second_experiment_id, "payment_provider_readonly", 79, "payment:79", 1100),
+            (experiment_id, "owner_verified", 299, "owner:299", 1500),
+            (experiment_id, "analytics_readonly", 999, "analytics:not-revenue", 2000),
+            (experiment_id, "public_http", 888, "public:not-revenue", 2500),
+            (experiment_id, "owner_verified", 0, "owner:zero", 3000),
+        )
+        for (
+            target_experiment_id,
+            source_kind,
+            revenue_usd,
+            evidence_ref,
+            observed_at,
+        ) in observations:
+            self.store.add_observation(
+                experiment_id=target_experiment_id,
+                source_kind=source_kind,
+                metric="qualified runs",
+                value=1,
+                revenue_usd=revenue_usd,
+                evidence_ref=evidence_ref,
+                observed_at=observed_at,
+            )
+
+        self.assertEqual(
+            self.store.verified_revenue_summary(),
+            {"total_usd": 378.0, "payments": 2, "last_observed_at": 1500.0},
+        )
+
     def test_existing_experiment_table_gains_measurement_source(self):
         connection = self.store.conn()
         connection.execute("DROP TABLE experiments")

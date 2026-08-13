@@ -47,6 +47,9 @@ PUBLIC_OBSERVATION_FIELDS = (
     "revenue_usd",
     "observed_at",
 )
+PUBLIC_REVENUE_SOURCES = frozenset(
+    ("payment_provider_readonly", "owner_verified")
+)
 
 
 def _artifact_root():
@@ -133,6 +136,13 @@ def _latest_availability(observations):
     return None
 
 
+def _public_observation(item):
+    public = {key: item[key] for key in PUBLIC_OBSERVATION_FIELDS}
+    if public["source_kind"] not in PUBLIC_REVENUE_SOURCES:
+        public["revenue_usd"] = 0
+    return public
+
+
 def _checkout_readiness(experiments, observations):
     newest = {}
     for observation in observations:
@@ -165,6 +175,17 @@ def _checkout_readiness(experiments, observations):
             }
         )
     return statuses
+
+
+def _verified_revenue():
+    summary = store.verified_revenue_summary()
+    observed_at = summary["last_observed_at"]
+    return {
+        "total_usd": round(summary["total_usd"], 2),
+        "payments": summary["payments"],
+        "last_observed_at": observed_at,
+        "age": "never" if observed_at is None else ago(observed_at),
+    }
 
 
 def _owner_blockers(experiments, checkout_readiness):
@@ -240,7 +261,7 @@ def api_state():
         for item in store.list_experiments()
     ]
     observations = [
-        {key: item[key] for key in PUBLIC_OBSERVATION_FIELDS}
+        _public_observation(item)
         for item in store.list_observations()
     ]
     checkout_readiness = _checkout_readiness(experiments, observations)
@@ -264,6 +285,7 @@ def api_state():
             "experiments": experiments,
             "observations": observations,
             "inbox": _inbox_counts(),
+            "verified_revenue": _verified_revenue(),
             "runtime_release": _runtime_release(),
             "availability": _latest_availability(observations),
             "checkout_readiness": checkout_readiness,

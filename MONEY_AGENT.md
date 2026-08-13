@@ -310,6 +310,19 @@ Positive matching evidence removes only the warning that no link is present;
 it does not clear other owner-required or measurement blockers. An unrelated
 analytics or availability observation cannot clear it.
 
+The verified-revenue header and panel answer how much payment evidence is
+recorded across the complete ledger. They sum only positive
+`payment_provider_readonly` and `owner_verified` amounts. The same source and
+evidence reference counts once even when attached to multiple experiments; if
+duplicate rows disagree, the lower positive amount is used. Analytics, public
+availability, checkout readiness, forecasts, and operating spend are excluded.
+
+This total is recorded evidence, not a live provider balance, payout status,
+profit calculation, or bank confirmation. Until an approved read-only payment
+adapter or owner-verified observation is imported, it correctly remains `$0.00`
+with zero payment evidence items. Malformed historical revenue on a disallowed
+source is zeroed at the public API boundary and cannot create a payment label.
+
 ### Checkout readiness
 
 Each valid owned-project URL also gets one zero-cost `AUTO_LOCAL` experiment
