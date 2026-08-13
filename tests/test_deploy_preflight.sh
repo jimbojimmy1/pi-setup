@@ -35,8 +35,10 @@ grep -Fx 'STATUS: outdated' <<<"$output"
 grep -Fx 'SERVICES: money-agent money-agent-web' <<<"$output"
 grep -Fx 'NO_ACTIONS_EXECUTED: true' <<<"$output"
 grep -F "git fetch --depth 1 origin $reviewed" <<<"$output"
+grep -F "git fetch --depth 1 origin $installed" <<<"$output"
 grep -F "git checkout --detach $reviewed" <<<"$output"
 grep -F "git checkout --detach $installed" <<<"$output"
+test "$(grep -Fc 'set -euo pipefail' <<<"$output")" -eq 2
 grep -F "else printf '\\nMA_EXPECTED_RELEASE_REF=$reviewed\\n'" <<<"$output"
 grep -F "else printf '\\nMA_EXPECTED_RELEASE_REF=$installed\\n'" <<<"$output"
 grep -F 'MONEY_AGENT_DIR=' <<<"$output"
@@ -45,6 +47,12 @@ test ! -e "$call_log"
 grep -Fx "$installed" "$app/release.txt"
 grep -Fx 'keep' "$app/sentinel"
 test "$(find "$app" -mindepth 1 -maxdepth 1 -type f | wc -l)" -eq 2
+
+output="$(cd "$tmp" && run_preflight)"
+printf -v quoted_root '%q' "$root"
+grep -Fx "  cd $quoted_root" <<<"$output"
+
+grep -F 'read -r -N 130' "$root/money-agent-deploy-preflight.sh"
 
 printf '%s\n' "$reviewed" > "$app/release.txt"
 output="$(run_preflight)"

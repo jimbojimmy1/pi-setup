@@ -102,6 +102,10 @@ comparison status, application directory, and the `money-agent` and
 `money-agent-web` service names. A different clean installed commit also
 produces a rollback sequence.
 
+Printed Git commands target the repository directory containing the preflight
+script, independent of the shell's current directory. Set `MA_REPO_DIR` only if
+the reviewed checkout intentionally lives elsewhere.
+
 The upgrade and rollback commands are output for review; the preflight never
 executes them. Confirm `NO_ACTIONS_EXECUTED: true` in its output. Running the
 printed commands still requires explicit owner approval because they fetch and
