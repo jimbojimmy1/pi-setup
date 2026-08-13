@@ -88,6 +88,27 @@ prefix match. It reports `outdated` for a mismatch, `dirty` for an uncommitted
 local install, and `unknown` when either side is not recorded. The dashboard
 does not query GitHub or claim that repository-only changes are deployed.
 
+### Deployment preflight
+
+On the Pi, inspect an exact reviewed release before approving an upgrade:
+
+```bash
+bash money-agent-deploy-preflight.sh REVIEWED_COMMIT
+```
+
+`REVIEWED_COMMIT` must be a full 40-character Git SHA. The preflight reads only
+the local `release.txt` marker and prints the reviewed commit, installed marker,
+comparison status, application directory, and the `money-agent` and
+`money-agent-web` service names. A different clean installed commit also
+produces a rollback sequence.
+
+The upgrade and rollback commands are output for review; the preflight never
+executes them. Confirm `NO_ACTIONS_EXECUTED: true` in its output. Running the
+printed commands still requires explicit owner approval because they fetch and
+check out code, install files, update the expected-release setting, and restart
+services. The preflight itself makes no network call, writes no file, and does
+not invoke Git, the installer, `sudo`, or `systemctl`.
+
 ## Roll back
 
 Find the last known-good commit, then reinstall its runtime:

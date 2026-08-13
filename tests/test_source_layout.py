@@ -20,8 +20,18 @@ class SourceLayoutTest(unittest.TestCase):
         self.assertIn("python3 -m unittest discover -s tests -v", text)
         self.assertIn("bash -n setup-money-agent.sh", text)
         self.assertIn("bash tests/test_installer.sh", text)
+        self.assertIn("bash -n money-agent-deploy-preflight.sh", text)
+        self.assertIn("bash tests/test_deploy_preflight.sh", text)
         self.assertIn("uses: actions/checkout@v5", text)
         self.assertIn("uses: actions/setup-python@v6", text)
+
+    def test_deployment_preflight_is_versioned_and_documented(self):
+        preflight = ROOT / "money-agent-deploy-preflight.sh"
+        self.assertTrue(preflight.is_file())
+        guide = (ROOT / "MONEY_AGENT.md").read_text(encoding="utf-8")
+        self.assertIn("money-agent-deploy-preflight.sh REVIEWED_COMMIT", guide)
+        self.assertIn("NO_ACTIONS_EXECUTED", guide)
+        self.assertIn("explicit owner approval", guide)
 
 
 if __name__ == "__main__":
