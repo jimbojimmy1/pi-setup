@@ -27,11 +27,13 @@ still counts once. If duplicate rows disagree on amount, the lower positive
 amount is used to avoid overstating revenue. The query covers the full ledger
 rather than the bounded dashboard observation list.
 
-Historical rows fail closed unless amount and timestamp have numeric SQLite
-storage classes, are positive and finite, and the evidence reference is nonblank
-bounded text. The public observation list independently zeroes revenue that does
-not meet the same evidence requirements, so malformed legacy data cannot create
-a payment label or crash the dashboard.
+Each historical row fails closed before deduplication unless amount and timestamp
+have numeric SQLite storage classes, are positive and finite, and the evidence
+reference is nonblank bounded text. This prevents a malformed duplicate from
+changing the amount or freshness of a valid event. The public observation list
+independently requires native finite numeric values and zeroes revenue that does
+not meet the same evidence requirements, so numeric-looking BLOB/text values
+cannot create a payment label or crash the dashboard.
 
 The result contains:
 

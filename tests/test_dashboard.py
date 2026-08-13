@@ -119,6 +119,36 @@ class DashboardStateTest(unittest.TestCase):
                 1,
             ),
         )
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "owner_verified",
+                "qualified runs in FunnelSleuth analytics",
+                1,
+                b"79",
+                "owner:binary-amount",
+                1600,
+                1,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "owner_verified",
+                "qualified runs in FunnelSleuth analytics",
+                1,
+                79,
+                "owner:binary-time",
+                b"1600",
+                1,
+            ),
+        )
         connection.commit()
 
         payload = self._state(now=2100)
@@ -139,13 +169,22 @@ class DashboardStateTest(unittest.TestCase):
             and item["observed_at"] == 2000
         )
         self.assertEqual(analytics["revenue_usd"], 0)
-        malformed = next(
+        binary_amount = next(
             item
             for item in payload["observations"]
             if item["source_kind"] == "owner_verified"
-            and item["observed_at"] == "later"
+            and item["observed_at"] == 1600
         )
-        self.assertEqual(malformed["revenue_usd"], 0)
+        self.assertEqual(binary_amount["revenue_usd"], 0)
+        self.assertGreaterEqual(
+            sum(
+                item["source_kind"] == "owner_verified"
+                and item["observed_at"] is None
+                and item["revenue_usd"] == 0
+                for item in payload["observations"]
+            ),
+            2,
+        )
 
     def test_template_renders_verified_revenue_as_recorded_evidence(self):
         template = (

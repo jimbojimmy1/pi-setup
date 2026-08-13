@@ -130,6 +130,21 @@ class ObservationStoreTest(unittest.TestCase):
                     1,
                 ),
             )
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                second_experiment_id,
+                "owner_verified",
+                "qualified runs",
+                1,
+                float("inf"),
+                "owner:299",
+                999999,
+                1,
+            ),
+        )
         connection.commit()
 
         self.assertEqual(

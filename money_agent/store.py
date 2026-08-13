@@ -494,28 +494,37 @@ def list_observations(experiment_id=None, limit=100):
 
 def verified_revenue_summary():
     rows = conn().execute(
-        "SELECT source_kind, evidence_ref, MIN(revenue_usd) AS revenue_usd,"
-        " MAX(observed_at) AS observed_at FROM observations"
+        "SELECT source_kind, evidence_ref, revenue_usd, observed_at"
+        " FROM observations"
         " WHERE source_kind IN (?, ?)"
         " AND typeof(revenue_usd) IN ('integer', 'real') AND revenue_usd > 0"
         " AND typeof(observed_at) IN ('integer', 'real') AND observed_at > 0"
         " AND typeof(evidence_ref) = 'text'"
-        " AND length(trim(evidence_ref)) BETWEEN 1 AND 512"
-        " GROUP BY source_kind, evidence_ref",
+        " AND length(trim(evidence_ref)) BETWEEN 1 AND 512",
         ("payment_provider_readonly", "owner_verified"),
-    ).fetchall()
-    total = 0.0
-    payments = 0
-    last_observed_at = None
+    )
+    deduplicated = {}
     for row in rows:
         amount = float(row["revenue_usd"])
         observed_at = float(row["observed_at"])
+        if not math.isfinite(amount) or not math.isfinite(observed_at):
+            continue
+        key = (row["source_kind"], row["evidence_ref"])
+        existing = deduplicated.get(key)
+        if existing is None:
+            deduplicated[key] = (amount, observed_at)
+        else:
+            deduplicated[key] = (
+                min(existing[0], amount),
+                max(existing[1], observed_at),
+            )
+
+    total = 0.0
+    payments = 0
+    last_observed_at = None
+    for amount, observed_at in deduplicated.values():
         next_total = total + amount
-        if (
-            not math.isfinite(amount)
-            or not math.isfinite(observed_at)
-            or not math.isfinite(next_total)
-        ):
+        if not math.isfinite(next_total):
             continue
         total = next_total
         payments += 1

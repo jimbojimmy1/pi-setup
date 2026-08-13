@@ -139,19 +139,21 @@ def _latest_availability(observations):
 
 def _public_observation(item):
     public = {key: item[key] for key in PUBLIC_OBSERVATION_FIELDS}
-    try:
-        revenue = float(public["revenue_usd"])
-        observed_at = float(public["observed_at"])
-    except (TypeError, ValueError):
-        revenue = 0
-        observed_at = 0
+    revenue_value = public["revenue_usd"]
+    observed_value = public["observed_at"]
+    revenue_is_number = type(revenue_value) in (int, float)
+    observed_is_number = type(observed_value) in (int, float)
+    revenue = float(revenue_value) if revenue_is_number else 0
+    observed_at = float(observed_value) if observed_is_number else 0
     evidence_ref = item.get("evidence_ref")
+    if not observed_is_number or not math.isfinite(observed_at) or observed_at <= 0:
+        public["observed_at"] = None
     if (
         public["source_kind"] not in PUBLIC_REVENUE_SOURCES
+        or not revenue_is_number
         or not math.isfinite(revenue)
         or revenue <= 0
-        or not math.isfinite(observed_at)
-        or observed_at <= 0
+        or public["observed_at"] is None
         or not isinstance(evidence_ref, str)
         or not evidence_ref.strip()
         or len(evidence_ref) > 512
