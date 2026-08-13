@@ -51,6 +51,10 @@ resolve_release_revision() {
   elif [ -d "$LOCAL_SOURCE" ]; then
     release_revision='local-unversioned'
   else
+    if [[ ! "$RELEASE_REF" =~ ^[0-9a-fA-F]{40}$ ]]; then
+      printf 'standalone installs require MA_RELEASE_REF to be a full commit SHA\n' >&2
+      return 1
+    fi
     release_revision="$RELEASE_REF"
   fi
   validate_release_revision "$release_revision"
@@ -130,6 +134,7 @@ install_runtime() {
   local relative marker_tmp
   mkdir -p "$APP_DIR/templates"
   install_config
+  rm -f -- "$APP_DIR/release.txt"
 
   for relative in "${REQUIRED_FILES[@]}"; do
     if [ "$relative" = "profile.json" ] && [ -f "$APP_DIR/profile.json" ]; then

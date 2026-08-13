@@ -69,8 +69,11 @@ runtime files are replaced.
 
 Every install writes the copied source revision to `~/money-agent/release.txt`.
 A cloned install records the full Git commit and adds `-dirty` when local
-changes or untracked files were present. A standalone install records the exact
-`MA_RELEASE_REF` supplied to the installer. The marker contains no credentials.
+changes or untracked files were present. A standalone install requires and
+records the full 40-character commit SHA in `MA_RELEASE_REF`; branch and tag
+names are rejected because they can move. The marker contains no credentials.
+It is removed before runtime replacement and published again only after every
+runtime file is installed successfully.
 
 To make the dashboard compare the installed runtime with a reviewed release,
 set the expected commit in `~/money-agent/config.env` before restarting the web

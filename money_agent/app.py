@@ -81,9 +81,7 @@ def _runtime_release():
     elif installed and installed.endswith("-dirty"):
         status = "dirty"
     elif installed and expected:
-        if installed == expected:
-            status = "current"
-        elif HEX_REVISION_PATTERN.fullmatch(installed) and HEX_REVISION_PATTERN.fullmatch(
+        if HEX_REVISION_PATTERN.fullmatch(installed) and HEX_REVISION_PATTERN.fullmatch(
             expected
         ):
             status = (
@@ -91,8 +89,6 @@ def _runtime_release():
                 if installed.startswith(expected) or expected.startswith(installed)
                 else "outdated"
             )
-        else:
-            status = "outdated"
     return {"installed": installed, "expected": expected, "status": status}
 
 

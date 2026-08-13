@@ -295,6 +295,10 @@ class DashboardStateTest(unittest.TestCase):
                 "status": "unknown",
             },
         )
+        self.assertEqual(
+            self._release_state("main", "main"),
+            {"installed": "main", "expected": "main", "status": "unknown"},
+        )
 
     def test_template_renders_runtime_release_without_deployment_claim(self):
         template = (
