@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-13 04:23 (America/New_York)
+Updated: 2026-08-13 05:27 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `2feda5a`
+- Latest implementation commit before this handoff update: `04210f1`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `1014b9c` (new local commits not yet pushed)
+- Remote PR head before this update: `7370a4b` (new local commits not yet pushed)
 
 ## Implemented architecture
 
@@ -104,6 +104,10 @@ impersonating the owner.
   active experiment cannot silently stop being monitored after 50 newer rows
   and old owned-project monitors or revenue lanes are not recreated. The public
   dashboard remains explicitly bounded to its newest 50 experiment rows.
+- Availability and checkout status now use independent latest-valid 0/1 public
+  evidence queries rather than the 100-row display window. Malformed binary,
+  text, non-finite, out-of-domain, invalid-time, or identity values fail closed
+  without breaking `/api/state` or creating a false checkout-ready signal.
 
 ## Current owned revenue project
 
@@ -146,12 +150,12 @@ Latest combined verification before this documentation update:
   fail-closed cases passed
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- Python 3.11 `python -m unittest discover -s tests -v`: 67 tests passed in
-  1.481 seconds
+- Python 3.11 `python -m unittest discover -s tests -v`: 71 tests passed in
+  2.219 seconds
 - `git diff --check`: exit 0
 - Installer tests also cover immutable standalone provenance and stale-marker
   invalidation after an injected partial-upgrade failure.
-- GitHub Actions run `31677549142`: all steps passed for remote head `1014b9c`;
+- GitHub Actions run `31681908653`: all steps passed for remote head `7370a4b`;
   checks for the new commits must pass after push.
 
 ## Commits added in this workstream
@@ -205,6 +209,9 @@ Latest combined verification before this documentation update:
 - `97376cf` design complete experiment lifecycle scans
 - `2eba682` plan complete experiment lifecycle scans
 - `2feda5a` scan complete experiment lifecycle
+- `c707ae6` design truthful public evidence snapshots
+- `ca24d51` plan truthful public evidence snapshots
+- `04210f1` keep public evidence snapshots truthful
 
 ## Next action
 
