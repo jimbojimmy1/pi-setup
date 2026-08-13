@@ -257,6 +257,12 @@ The public availability panel shows only the latest `public_availability`
 observation as available or unavailable, plus its age. It is an uptime signal.
 It does not prove traffic, checkout readiness, conversion, a sale, or revenue.
 
+The checkout-readiness panel groups evidence by the matching owned-project
+experiment. Missing or zero evidence keeps the owner payment-link blocker.
+Positive matching evidence removes only the warning that no link is present;
+it does not clear other owner-required or measurement blockers. An unrelated
+analytics or availability observation cannot clear it.
+
 ### Checkout readiness
 
 Each valid owned-project URL also gets one zero-cost `AUTO_LOCAL` experiment

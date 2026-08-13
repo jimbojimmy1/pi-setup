@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-12 20:14 (America/New_York)
+Updated: 2026-08-12 21:13 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `b2f50e9`
+- Latest implementation commit before this handoff update: `ae02000`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `5e59e23`
+- Remote PR head before this update: `f3172e7`
 
 ## Implemented architecture
 
@@ -65,6 +65,9 @@ impersonating the owner.
   bounded direct-IP HTTPS GET scans only actionable HTML attributes for narrow
   Stripe or PayPal destinations, follows nothing, and records at most one
   non-revenue observation per hour.
+- The dashboard now shows checkout readiness per matching project experiment.
+  Missing or zero evidence retains the payment-link blocker; positive matching
+  evidence clears only that warning, never other blockers or revenue status.
 
 ## Current owned revenue project
 
@@ -99,8 +102,8 @@ Latest combined verification before this documentation update:
 - Git Bash `bash -n setup-money-agent.sh`: exit 0
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- Python 3.11 `python -m unittest discover -s tests -v`: 50 tests passed in
-  1.078 seconds
+- Python 3.11 `python -m unittest discover -s tests -v`: 53 tests passed in
+  1.270 seconds
 - `git diff --check`: exit 0
 - GitHub Actions run `31645803074`: all steps passed; the workflow was then
   moved to the Node 24 action releases to remove its runtime deprecation warning
@@ -138,10 +141,13 @@ Latest combined verification before this documentation update:
 - `6af160c` show evidence health on the dashboard
 - `d87b258` plan checkout-readiness monitoring
 - `b2f50e9` monitor public checkout readiness
+- `b7533b2` plan checkout dashboard status
+- `ae02000` show checkout readiness on the dashboard
 
 ## Next action
 
-Expose the latest checkout-readiness observation as a named dashboard status
-and keep the owner checkout blocker until positive evidence exists. Do not
-connect financial or analytics accounts, follow checkout links, send
-alerts/messages, or request credentials without explicit owner approval.
+Record the installed runtime revision and show whether the Raspberry Pi is
+running this PR's current release, so repository progress is not confused with
+deployed automation. Do not deploy, restart services, connect financial or
+analytics accounts, follow checkout links, send alerts/messages, or request
+credentials without explicit owner approval.
