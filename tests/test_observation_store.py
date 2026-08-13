@@ -78,6 +78,113 @@ class ObservationStoreTest(unittest.TestCase):
             experiment["result"], "Latest verified metric: 3 qualified runs."
         )
 
+    def test_latest_public_binary_observation_fails_closed_and_falls_back(self):
+        first_id = self.add_experiment()
+        second_id = self.add_experiment()
+        self.store.add_observation(
+            experiment_id=first_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="checkout:valid",
+            observed_at=1000,
+        )
+        self.store.add_observation(
+            experiment_id=second_id,
+            source_kind="public_http",
+            metric="public_availability",
+            value=0,
+            revenue_usd=0,
+            evidence_ref="health:valid",
+            observed_at=1500,
+        )
+        connection = self.store.conn()
+        malformed = (
+            (
+                first_id,
+                "public_http",
+                "checkout_readiness",
+                b"1",
+                "checkout:blob",
+                2100,
+            ),
+            (
+                first_id,
+                "public_http",
+                "checkout_readiness",
+                float("inf"),
+                "checkout:infinite",
+                2200,
+            ),
+            (first_id, "public_http", "checkout_readiness", 2, "checkout:two", 2300),
+            (
+                first_id,
+                "public_http",
+                "checkout_readiness",
+                1,
+                "checkout:bad-time",
+                "later",
+            ),
+            (
+                first_id,
+                "analytics_readonly",
+                "checkout_readiness",
+                1,
+                "checkout:analytics",
+                2500,
+            ),
+            (
+                first_id,
+                "public_http",
+                "public_availability",
+                1,
+                "health:wrong-project",
+                2600,
+            ),
+        )
+        for experiment_id, source, metric, value, evidence_ref, observed_at in malformed:
+            connection.execute(
+                "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+                "revenue_usd,evidence_ref,observed_at,created_at)"
+                " VALUES(?,?,?,?,0,?,?,1)",
+                (experiment_id, source, metric, value, evidence_ref, observed_at),
+            )
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,0,?,?,1)",
+            (
+                first_id,
+                "public_http",
+                "checkout_readiness",
+                "garbage",
+                "checkout:text",
+                2000,
+            ),
+        )
+        connection.commit()
+
+        self.assertEqual(
+            self.store.latest_public_binary_observation(
+                "checkout_readiness", experiment_id=first_id
+            )["evidence_ref"],
+            "checkout:valid",
+        )
+        self.assertEqual(
+            self.store.latest_public_binary_observation(
+                "public_availability", experiment_id=second_id
+            )["evidence_ref"],
+            "health:valid",
+        )
+        self.assertIsNone(
+            self.store.latest_public_binary_observation("missing_metric")
+        )
+        for metric, experiment_id in (("", None), ("checkout_readiness", True)):
+            with self.subTest(metric=metric, experiment_id=experiment_id):
+                with self.assertRaises(ValueError):
+                    self.store.latest_public_binary_observation(metric, experiment_id)
+
     def test_verified_revenue_summary_counts_only_deduplicated_payment_evidence(self):
         experiment_id = self.add_experiment()
         second_experiment_id = self.add_experiment()

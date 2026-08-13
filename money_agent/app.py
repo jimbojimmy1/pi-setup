@@ -51,6 +51,7 @@ PUBLIC_OBSERVATION_FIELDS = (
 PUBLIC_REVENUE_SOURCES = frozenset(
     ("payment_provider_readonly", "owner_verified")
 )
+PUBLIC_BINARY_METRICS = frozenset(("public_availability", "checkout_readiness"))
 
 
 def _artifact_root():
@@ -122,31 +123,54 @@ def _inbox_counts():
     return counts
 
 
-def _latest_availability(observations):
-    for item in observations:
-        if (
-            item["source_kind"] == "public_http"
-            and item["metric"] == "public_availability"
-            and item["observed_at"] is not None
-        ):
-            observed_at = float(item["observed_at"])
-            return {
-                "available": float(item["value"]) > 0,
-                "observed_at": observed_at,
-                "age": ago(observed_at),
-            }
+def _latest_availability(observation):
+    if (
+        observation is not None
+        and observation["source_kind"] == "public_http"
+        and observation["metric"] == "public_availability"
+        and observation["value"] is not None
+        and observation["observed_at"] is not None
+    ):
+        observed_at = float(observation["observed_at"])
+        return {
+            "available": float(observation["value"]) > 0,
+            "observed_at": observed_at,
+            "age": ago(observed_at),
+        }
     return None
 
 
 def _public_observation(item):
     public = {key: item[key] for key in PUBLIC_OBSERVATION_FIELDS}
+    if type(public["id"]) is not int or public["id"] < 1:
+        public["id"] = None
+    if type(public["experiment_id"]) is not int or public["experiment_id"] < 1:
+        public["experiment_id"] = None
+    for field in ("source_kind", "metric"):
+        if not isinstance(public[field], str):
+            public[field] = ""
+    value = public["value"]
     revenue_value = public["revenue_usd"]
     observed_value = public["observed_at"]
+    value_is_number = type(value) in (int, float)
     revenue_is_number = type(revenue_value) in (int, float)
     observed_is_number = type(observed_value) in (int, float)
+    numeric_value = float(value) if value_is_number else 0
     revenue = float(revenue_value) if revenue_is_number else 0
     observed_at = float(observed_value) if observed_is_number else 0
     evidence_ref = item.get("evidence_ref")
+    if (
+        not value_is_number
+        or not math.isfinite(numeric_value)
+        or (
+            public["source_kind"] == "public_http"
+            and public["metric"] in PUBLIC_BINARY_METRICS
+            and numeric_value not in (0.0, 1.0)
+        )
+    ):
+        public["value"] = None
+    else:
+        public["value"] = numeric_value
     if not observed_is_number or not math.isfinite(observed_at) or observed_at <= 0:
         public["observed_at"] = None
     if (
@@ -165,15 +189,7 @@ def _public_observation(item):
     return public
 
 
-def _checkout_readiness(experiments, observations):
-    newest = {}
-    for observation in observations:
-        if (
-            observation["source_kind"] == "public_http"
-            and observation["metric"] == "checkout_readiness"
-            and observation["observed_at"] is not None
-        ):
-            newest.setdefault(observation["experiment_id"], observation)
+def _checkout_readiness(experiments):
     statuses = []
     seen_projects = set()
     for experiment in experiments:
@@ -183,7 +199,12 @@ def _checkout_readiness(experiments, observations):
         if project in seen_projects:
             continue
         seen_projects.add(project)
-        observation = newest.get(experiment["id"])
+        raw_observation = store.latest_public_binary_observation(
+            "checkout_readiness", experiment["id"]
+        )
+        observation = (
+            None if raw_observation is None else _public_observation(raw_observation)
+        )
         observed_at = (
             None if observation is None else float(observation["observed_at"])
         )
@@ -287,7 +308,11 @@ def api_state():
         _public_observation(item)
         for item in store.list_observations()
     ]
-    checkout_readiness = _checkout_readiness(experiments, observations)
+    checkout_readiness = _checkout_readiness(experiments)
+    raw_availability = store.latest_public_binary_observation("public_availability")
+    availability = _latest_availability(
+        None if raw_availability is None else _public_observation(raw_availability)
+    )
     return jsonify(
         {
             "state": store.get_meta("state", "starting"),
@@ -310,7 +335,7 @@ def api_state():
             "inbox": _inbox_counts(),
             "verified_revenue": _verified_revenue(),
             "runtime_release": _runtime_release(),
-            "availability": _latest_availability(observations),
+            "availability": availability,
             "checkout_readiness": checkout_readiness,
             "next_work": _next_work(),
             "owner_blockers": _owner_blockers(experiments, checkout_readiness),

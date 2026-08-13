@@ -340,6 +340,15 @@ The public availability panel shows only the latest `public_availability`
 observation as available or unavailable, plus its age. It is an uptime signal.
 It does not prove traffic, checkout readiness, conversion, a sale, or revenue.
 
+The public observation list is bounded to its newest 100 rows for display. It
+is not the source of availability or checkout status. Those panels query the
+newest valid numeric 0/1 evidence independently for each matching monitor, so
+unrelated analytics cannot crowd a valid status out of view. Historical text,
+binary, non-finite, invalid-time, or non-binary public values fail closed; the
+status query falls back to an older valid row or reports no evidence. Invalid
+values are returned as `null` in display history and cannot break the API or be
+coerced into readiness.
+
 The checkout-readiness panel groups evidence by the matching owned-project
 experiment. Missing or zero evidence keeps the owner payment-link blocker.
 Positive matching evidence removes only the warning that no link is present;

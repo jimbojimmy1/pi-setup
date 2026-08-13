@@ -375,6 +375,122 @@ class DashboardStateTest(unittest.TestCase):
             any("checkout link" in blocker["action"] for blocker in payload["owner_blockers"])
         )
 
+    def test_malformed_public_values_fail_closed_with_valid_fallback(self):
+        experiment_id = self._add_checkout_experiment()
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="checkout:valid",
+            observed_at=1500,
+        )
+        connection = self.store.conn()
+        for value, evidence_ref, observed_at in (
+            (2, "checkout:two", 1600),
+            (float("inf"), "checkout:infinite", 1700),
+            ("garbage", "checkout:text", 1800),
+            (b"1", "checkout:blob", 1900),
+        ):
+            connection.execute(
+                "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+                "revenue_usd,evidence_ref,observed_at,created_at)"
+                " VALUES(?,?,?,?,0,?,?,1)",
+                (
+                    experiment_id,
+                    "public_http",
+                    "checkout_readiness",
+                    value,
+                    evidence_ref,
+                    observed_at,
+                ),
+            )
+        connection.commit()
+
+        payload = self._state(now=2100)
+
+        self.assertEqual(
+            payload["checkout_readiness"][0],
+            {
+                "project": "FunnelSleuth",
+                "ready": True,
+                "observed_at": 1500.0,
+                "age": "10m ago",
+            },
+        )
+        malformed_times = {1600, 1700, 1800, 1900}
+        malformed_values = [
+            item["value"]
+            for item in payload["observations"]
+            if item["observed_at"] in malformed_times
+        ]
+        self.assertEqual(malformed_values, [None, None, None, None])
+
+    def test_malformed_public_identity_fields_remain_json_safe(self):
+        experiment_id = self._add_checkout_experiment()
+        connection = self.store.conn()
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,0,?,?,1)",
+            (
+                b"1",
+                b"public_http",
+                b"checkout_readiness",
+                1,
+                "malformed:identity",
+                1900,
+            ),
+        )
+        connection.commit()
+
+        payload = self._state(now=2100)
+        malformed = next(
+            item for item in payload["observations"] if item["observed_at"] == 1900
+        )
+
+        self.assertIsNone(malformed["experiment_id"])
+        self.assertEqual(malformed["source_kind"], "")
+        self.assertEqual(malformed["metric"], "")
+        self.assertEqual(malformed["value"], 1.0)
+
+    def test_checkout_snapshot_is_independent_of_display_window(self):
+        experiment_id = self._add_checkout_experiment()
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="checkout:outside-display-window",
+            observed_at=1000,
+        )
+        analytics_id = next(
+            item["id"]
+            for item in self.store.list_experiments()
+            if item["measurement_source"] == "analytics_readonly"
+        )
+        for index in range(100):
+            self.store.add_observation(
+                experiment_id=analytics_id,
+                source_kind="analytics_readonly",
+                metric="qualified runs in FunnelSleuth analytics",
+                value=index,
+                revenue_usd=0,
+                evidence_ref=f"analytics:crowd-{index}",
+                observed_at=2000 + index,
+            )
+
+        payload = self._state(now=3100)
+
+        self.assertEqual(len(payload["observations"]), 100)
+        self.assertFalse(
+            any(item["metric"] == "checkout_readiness" for item in payload["observations"])
+        )
+        self.assertTrue(payload["checkout_readiness"][0]["ready"])
+        self.assertEqual(payload["checkout_readiness"][0]["observed_at"], 1000.0)
+
     def test_template_renders_checkout_status_without_payment_claim(self):
         template = (
             Path(__file__).resolve().parents[1]

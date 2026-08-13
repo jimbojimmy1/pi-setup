@@ -499,6 +499,39 @@ def list_observations(experiment_id=None, limit=100):
     return [dict(row) for row in rows]
 
 
+def latest_public_binary_observation(metric, experiment_id=None):
+    """Return the newest finite 0/1 public signal, skipping malformed history."""
+    if not isinstance(metric, str) or not metric.strip():
+        raise ValueError("public observation metric must be non-empty text")
+    metric = metric.strip()
+    parameters = [metric]
+    experiment_clause = ""
+    if experiment_id is not None:
+        if type(experiment_id) is not int or experiment_id < 1:
+            raise ValueError("experiment ID must be a positive integer or None")
+        experiment_clause = " AND experiment_id=?"
+        parameters.append(experiment_id)
+    rows = conn().execute(
+        "SELECT * FROM observations WHERE source_kind='public_http' AND metric=?"
+        " AND typeof(value) IN ('integer','real') AND value IN (0,1)"
+        " AND typeof(observed_at) IN ('integer','real') AND observed_at > 0"
+        f"{experiment_clause} ORDER BY observed_at DESC, id DESC",
+        tuple(parameters),
+    )
+    for row in rows:
+        value = row["value"]
+        observed_at = row["observed_at"]
+        if (
+            type(value) in (int, float)
+            and type(observed_at) in (int, float)
+            and math.isfinite(float(value))
+            and math.isfinite(float(observed_at))
+            and float(value) in (0.0, 1.0)
+        ):
+            return dict(row)
+    return None
+
+
 def verified_revenue_summary():
     rows = conn().execute(
         "SELECT source_kind, evidence_ref, revenue_usd, observed_at"
