@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-12 19:11 (America/New_York)
+Updated: 2026-08-12 20:14 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `6af160c`
+- Latest implementation commit before this handoff update: `b2f50e9`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `6400ec9`
+- Remote PR head before this update: `5e59e23`
 
 ## Implemented architecture
 
@@ -61,6 +61,10 @@ impersonating the owner.
 - The dashboard reports only inbox file counts and the latest public
   availability state/time. It does not expose filenames, payloads, evidence
   references, or infer revenue from uptime.
+- Every valid owned URL gets a separate checkout-readiness experiment. Its
+  bounded direct-IP HTTPS GET scans only actionable HTML attributes for narrow
+  Stripe or PayPal destinations, follows nothing, and records at most one
+  non-revenue observation per hour.
 
 ## Current owned revenue project
 
@@ -74,6 +78,9 @@ impersonating the owner.
   configured
 - Public availability evidence: the bounded direct-IP probe returned HTTP 200
   on 2026-08-12; this does not verify checkout, conversion, or revenue
+- Checkout readiness evidence: the bounded probe returned HTTP 200 but found no
+  recognized Stripe or PayPal destination on 2026-08-12; the owner checkout
+  blocker remains active
 
 The daemon may prepare and implement bounded owned-site experiments. It must not
 spend money, contact people, create accounts, change payment or payout settings,
@@ -92,8 +99,8 @@ Latest combined verification before this documentation update:
 - Git Bash `bash -n setup-money-agent.sh`: exit 0
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- Python 3.11 `python -m unittest discover -s tests -v`: 45 tests passed in
-  0.804 seconds
+- Python 3.11 `python -m unittest discover -s tests -v`: 50 tests passed in
+  1.078 seconds
 - `git diff --check`: exit 0
 - GitHub Actions run `31645803074`: all steps passed; the workflow was then
   moved to the Node 24 action releases to remove its runtime deprecation warning
@@ -129,11 +136,12 @@ Latest combined verification before this documentation update:
 - `d157225` hand off automated evidence collection and final verification
 - `c844c55` plan dashboard evidence visibility
 - `6af160c` show evidence health on the dashboard
+- `d87b258` plan checkout-readiness monitoring
+- `b2f50e9` monitor public checkout readiness
 
 ## Next action
 
-Add a bounded, read-only checkout-readiness probe for owned public pages. It may
-detect whether an HTTPS Stripe or PayPal checkout destination is present but
-must not follow the checkout link, submit forms, create sessions, or infer a
-sale. Do not connect financial or analytics accounts, send alerts/messages, or
-request credentials without explicit owner approval.
+Expose the latest checkout-readiness observation as a named dashboard status
+and keep the owner checkout blocker until positive evidence exists. Do not
+connect financial or analytics accounts, follow checkout links, send
+alerts/messages, or request credentials without explicit owner approval.

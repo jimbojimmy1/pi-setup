@@ -257,6 +257,25 @@ The public availability panel shows only the latest `public_availability`
 observation as available or unavailable, plus its age. It is an uptime signal.
 It does not prove traffic, checkout readiness, conversion, a sale, or revenue.
 
+### Checkout readiness
+
+Each valid owned-project URL also gets one zero-cost `AUTO_LOCAL` experiment
+with metric `checkout_readiness`. Once per hour, the daemon makes one bounded
+direct-IP HTTPS `GET` with TLS hostname verification, a ten-second timeout, a
+64 KiB response cap, identity encoding, and no redirect handling. It parses
+only HTML anchor `href` and form `action` attributes. It never opens a checkout
+destination, submits a form, stores cookies, or creates a checkout session.
+
+The allowlist recognizes HTTPS destinations on `buy.stripe.com`,
+`book.stripe.com`, `donate.stripe.com`, and `paypal.me`, plus the PayPal-hosted
+`/ncp/payment/` path on `paypal.com`. Provider words, scripts, HTTP links,
+lookalike domains, relative links, and unrelated provider pages do not count.
+
+A value of `1` means a recognized destination was present in the bounded public
+HTML response. It does not prove the link is active, the provider account is
+connected, checkout succeeds, a customer visited, a payment occurred, or any
+revenue was earned. The probe cannot close an experiment or report revenue.
+
 ## FunnelSleuth blocker
 
 FunnelSleuth is the first owned project. Its current offers are a $79 audit and
