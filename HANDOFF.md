@@ -1,6 +1,6 @@
 # Money Agent handoff
 
-Updated: 2026-08-13 00:30 (America/New_York)
+Updated: 2026-08-13 01:33 (America/New_York)
 
 ## Objective
 
@@ -13,9 +13,9 @@ impersonating the owner.
 
 - Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
 - Branch: `claude/money-making-agent-debate-fp1ag2`
-- Latest implementation commit before this handoff update: `c50fb31`
+- Latest implementation commit before this handoff update: `0f4488e`
 - PR state checked before this update: open, draft, mergeable
-- Remote PR head before this update: `6452753` (new local commits not yet pushed)
+- Remote PR head before this update: `a508de2` (new local commits not yet pushed)
 
 ## Implemented architecture
 
@@ -77,6 +77,14 @@ impersonating the owner.
 - The dashboard compares the installed marker only with an optional
   operator-configured reviewed SHA. It reports `current`, `outdated`, `dirty`,
   or `unknown` and never treats a mutable ref as proof of deployment.
+- A separate deployment preflight reads only a physically capped local release
+  marker and prints the exact reviewed commit, comparison status, service names,
+  and shell-escaped upgrade/rollback commands without executing them.
+- Printed upgrade and rollback blocks use fail-fast subshells, fetch each exact
+  target commit before checkout, and require explicit owner approval before use.
+- Preflight tests use fail-fast command stubs to prove that inspection invokes
+  no Git, network, installer, sudo, or systemctl action; malformed, binary,
+  oversized, dirty, missing, and mutable release values fail closed.
 
 ## Current owned revenue project
 
@@ -110,15 +118,17 @@ python3 -m unittest discover -s tests -v
 
 Latest combined verification before this documentation update:
 
-- Git Bash `bash -n setup-money-agent.sh`: exit 0
+- Git Bash syntax checks for installer, preflight, and both shell suites: exit 0
+- Git Bash `bash tests/test_deploy_preflight.sh`: exit 0; all read-only and
+  fail-closed cases passed
 - Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
   preservation checks passed twice
-- Python 3.11 `python -m unittest discover -s tests -v`: 56 tests passed in
-  6.379 seconds
+- Python 3.11 `python -m unittest discover -s tests -q`: 57 tests passed in
+  3.996 seconds
 - `git diff --check`: exit 0
 - Installer tests also cover immutable standalone provenance and stale-marker
   invalidation after an injected partial-upgrade failure.
-- GitHub Actions run `31657063786`: all steps passed for remote head `6452753`;
+- GitHub Actions run `31667417133`: all steps passed for remote head `a508de2`;
   checks for the new commits must pass after push.
 
 ## Commits added in this workstream
@@ -159,13 +169,16 @@ Latest combined verification before this documentation update:
 - `f2b8120` plan runtime release status
 - `99c00a1` track installed runtime release
 - `c50fb31` keep release provenance fail closed
+- `867f04c` design deployment preflight
+- `dcede61` add read-only deployment preflight
+- `5d89c84` make deployment commands recoverable
+- `0f4488e` reject binary release markers
 
 ## Next action
 
-Prepare a non-mutating deployment preflight that prints the exact reviewed
-commit, current installed marker when run locally on the Pi, required upgrade
-and rollback commands, and service names without executing any of them. This
-should make one explicit owner approval sufficient for a recoverable upgrade.
-Do not deploy, restart services, connect financial or analytics accounts,
-follow checkout links, send alerts/messages, or request credentials without
-explicit owner approval.
+Wait for explicit owner approval before running the preflight on the Pi or
+executing any command it prints. Until approval arrives, improve repository-only
+evidence and documentation without implying the Pi is current. Do not deploy,
+restart services, connect financial or analytics accounts, follow checkout
+links, send alerts/messages, or request credentials without explicit owner
+approval.
