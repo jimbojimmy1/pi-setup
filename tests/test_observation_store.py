@@ -63,6 +63,40 @@ class ObservationStoreTest(unittest.TestCase):
         self.assertEqual(len(observations), 1)
         self.assertEqual(observations[0]["value"], 3)
 
+    def test_find_observation_uses_exact_validated_identity(self):
+        experiment_id = self.add_experiment()
+        observation_id = self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="analytics_readonly",
+            metric="qualified runs",
+            value=3,
+            revenue_usd=0,
+            evidence_ref="analytics:event-123",
+            observed_at=1000,
+        )
+
+        found = self.store.find_observation(
+            experiment_id, "analytics_readonly", "analytics:event-123"
+        )
+
+        self.assertEqual(found["id"], observation_id)
+        self.assertIsNone(
+            self.store.find_observation(
+                experiment_id, "analytics_readonly", "analytics:missing"
+            )
+        )
+        invalid = (
+            (True, "analytics_readonly", "analytics:event-123"),
+            (0, "analytics_readonly", "analytics:event-123"),
+            (experiment_id, "", "analytics:event-123"),
+            (experiment_id, "x" * 65, "analytics:event-123"),
+            (experiment_id, "analytics_readonly", ""),
+            (experiment_id, "analytics_readonly", "x" * 513),
+        )
+        for values in invalid:
+            with self.subTest(values=values), self.assertRaises(ValueError):
+                self.store.find_observation(*values)
+
     def test_status_and_result_update_together(self):
         experiment_id = self.add_experiment()
 

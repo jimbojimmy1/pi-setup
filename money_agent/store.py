@@ -484,6 +484,30 @@ def add_observation(
     return row["id"]
 
 
+def find_observation(experiment_id, source_kind, evidence_ref):
+    """Return one observation by its exact durable identity."""
+    if type(experiment_id) is not int or experiment_id < 1:
+        raise ValueError("experiment ID must be a positive integer")
+    if (
+        not isinstance(source_kind, str)
+        or not source_kind.strip()
+        or len(source_kind) > 64
+    ):
+        raise ValueError("source kind must be non-empty text of at most 64 chars")
+    if (
+        not isinstance(evidence_ref, str)
+        or not evidence_ref.strip()
+        or len(evidence_ref) > 512
+    ):
+        raise ValueError("evidence reference must be non-empty text of at most 512 chars")
+    row = conn().execute(
+        "SELECT * FROM observations WHERE experiment_id=? AND source_kind=?"
+        " AND evidence_ref=? LIMIT 1",
+        (experiment_id, source_kind.strip(), evidence_ref.strip()),
+    ).fetchone()
+    return dict(row) if row else None
+
+
 def list_observations(experiment_id=None, limit=100):
     if experiment_id is None:
         rows = conn().execute(

@@ -103,6 +103,59 @@ class MonitoringTest(unittest.TestCase):
         self.assertEqual(experiment["status"], "measuring")
         self.assertNotIn("revenue", experiment["result"].lower())
 
+    def test_old_evidence_retry_is_idempotent_beyond_history_window(self):
+        from money_agent.monitoring import ingest_observation
+
+        experiment_id = self.add_experiment()
+        original = ingest_observation(
+            experiment_id=experiment_id,
+            source_kind="analytics_readonly",
+            metric="qualified runs",
+            value=1,
+            evidence_ref="analytics:oldest",
+            observed_at=1000,
+        )
+        connection = self.store.conn()
+        for index in range(100):
+            connection.execute(
+                "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+                "revenue_usd,evidence_ref,observed_at,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    experiment_id,
+                    "analytics_readonly",
+                    "qualified runs",
+                    1,
+                    0,
+                    f"analytics:new-{index}",
+                    2000 + index,
+                    2000 + index,
+                ),
+            )
+        connection.commit()
+        before = self.store.get_experiment(experiment_id)
+        event_count = len(self.store.experiment_events(experiment_id))
+        lesson_count = len(self.store.lessons())
+
+        retried = ingest_observation(
+            experiment_id=experiment_id,
+            source_kind="analytics_readonly",
+            metric="qualified runs",
+            value=999,
+            revenue_usd=0,
+            evidence_ref="analytics:oldest",
+            observed_at=9999,
+            outcome="won",
+        )
+
+        after = self.store.get_experiment(experiment_id)
+        self.assertEqual(retried["id"], original["id"])
+        self.assertEqual(retried["value"], 1)
+        self.assertEqual(after["status"], before["status"])
+        self.assertEqual(after["result"], before["result"])
+        self.assertEqual(len(self.store.experiment_events(experiment_id)), event_count)
+        self.assertEqual(len(self.store.lessons()), lesson_count)
+
     def test_revenue_requires_payment_or_owner_evidence(self):
         from money_agent.monitoring import MonitoringError, ingest_observation
 
@@ -431,6 +484,49 @@ class MonitoringTest(unittest.TestCase):
         self.assertEqual(first["value"], 1)
         self.assertEqual(first["revenue_usd"], 0)
         self.assertEqual(self.store.get_experiment(experiment_id)["status"], "measuring")
+
+    def test_health_collection_reuses_old_bucket_beyond_history_window(self):
+        from money_agent.monitoring import collect_public_health
+
+        experiment_id = self.add_health_experiment()
+
+        def resolver(host, port, type=0):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+        calls = []
+
+        def connector(host, address, path, timeout, max_response_bytes):
+            calls.append(address)
+            return 200
+
+        original = collect_public_health(
+            experiment_id, now=7201, resolver=resolver, connector=connector
+        )
+        connection = self.store.conn()
+        for index in range(100):
+            connection.execute(
+                "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+                "revenue_usd,evidence_ref,observed_at,created_at)"
+                " VALUES(?,?,?,?,?,?,?,?)",
+                (
+                    experiment_id,
+                    "public_http",
+                    "public_availability",
+                    1,
+                    0,
+                    f"public-health:new-{index}",
+                    8000 + index,
+                    8000 + index,
+                ),
+            )
+        connection.commit()
+
+        retried = collect_public_health(
+            experiment_id, now=7250, resolver=resolver, connector=connector
+        )
+
+        self.assertEqual(retried["id"], original["id"])
+        self.assertEqual(calls, ["93.184.216.34"])
 
     def test_health_failure_records_zero_without_closing_experiment(self):
         from money_agent.monitoring import collect_public_health

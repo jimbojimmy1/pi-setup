@@ -306,15 +306,7 @@ def collect_public_health(
     bucket = int(observed_at // interval)
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
     evidence_ref = f"public-health:{digest}:{bucket}"
-    existing = next(
-        (
-            observation
-            for observation in store.list_observations(experiment_id)
-            if observation["source_kind"] == "public_http"
-            and observation["evidence_ref"] == evidence_ref
-        ),
-        None,
-    )
+    existing = store.find_observation(experiment_id, "public_http", evidence_ref)
     if existing is not None:
         return existing
 
@@ -361,15 +353,7 @@ def collect_checkout_readiness(
     bucket = int(observed_at // interval)
     digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
     evidence_ref = f"checkout-readiness:{digest}:{bucket}"
-    existing = next(
-        (
-            observation
-            for observation in store.list_observations(experiment_id)
-            if observation["source_kind"] == "public_http"
-            and observation["evidence_ref"] == evidence_ref
-        ),
-        None,
-    )
+    existing = store.find_observation(experiment_id, "public_http", evidence_ref)
     if existing is not None:
         return existing
 
@@ -489,6 +473,10 @@ def ingest_observation(
     elif window_complete:
         raise MonitoringError("window_complete is valid only with a lost outcome")
 
+    existing = store.find_observation(experiment_id, source_kind, evidence_ref)
+    if existing is not None:
+        return existing
+
     current_status = experiment["status"]
     if (
         current_status in TERMINAL_STATUSES
@@ -496,18 +484,6 @@ def ingest_observation(
         and target_status != current_status
     ):
         raise MonitoringError("terminal experiment outcomes cannot conflict")
-
-    existing = next(
-        (
-            observation
-            for observation in store.list_observations(experiment_id)
-            if observation["source_kind"] == source_kind
-            and observation["evidence_ref"] == evidence_ref
-        ),
-        None,
-    )
-    if existing is not None:
-        return existing
 
     observation_id = store.add_observation(
         experiment_id=experiment_id,
@@ -544,8 +520,7 @@ def ingest_observation(
                 "hypothesis without new evidence."
             )
         store.add_lesson(experiment["idea_id"], experiment["project"], lesson)
-    return next(
-        observation
-        for observation in store.list_observations(experiment_id)
-        if observation["id"] == observation_id
-    )
+    observation = store.find_observation(experiment_id, source_kind, evidence_ref)
+    if observation is None or observation["id"] != observation_id:
+        raise MonitoringError("stored observation could not be retrieved")
+    return observation

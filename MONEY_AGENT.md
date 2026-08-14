@@ -291,6 +291,14 @@ not make a typed claim true. A future provider adapter must use a separately
 configured `payment_provider_readonly` lane and still needs explicit approval
 before any account connection.
 
+Observation idempotency uses the database identity
+`(experiment_id, source_kind, evidence_ref)`, not the dashboard's bounded
+history window. The first accepted row for that identity wins permanently.
+Retrying it returns the original row without adding an event, changing an
+outcome or result, or creating another lesson, even after more than 100 newer
+observations exist. Public health and checkout collectors use the same exact
+lookup, so retrying an old collection bucket does not repeat its network probe.
+
 ### Observation inbox
 
 An approved read-only adapter can deposit the same JSON contract at:
