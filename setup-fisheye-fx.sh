@@ -43,12 +43,16 @@ YMLEOF
 echo "[4/5] Writing FX config..."
 sudo tee "$FX_CONF" > /dev/null << CONFEOF
 # Edit these to tune the fisheye look, then: sudo systemctl restart picam-fx
+# WIDTH/HEIGHT stay 4:3 so the full uncropped sensor FOV is captured.
+# OUT_SIZE squashes that into a square -> stretched, exaggerated fisheye.
+# K1/K2: more negative = more bulge.
 WIDTH=960
 HEIGHT=720
 FPS=20
 BITRATE=3M
-FX_K1=-0.5
-FX_K2=-0.2
+FX_K1=-0.8
+FX_K2=-0.35
+OUT_SIZE=720
 CONFEOF
 
 # ---- Pipeline script ----
@@ -70,7 +74,7 @@ rpicam-vid \
   | ffmpeg -loglevel warning \
     -f rawvideo -pix_fmt yuv420p \
     -s "${WIDTH}x${HEIGHT}" -r "$FPS" -i - \
-    -vf "lenscorrection=cx=0.5:cy=0.5:k1=${FX_K1}:k2=${FX_K2}" \
+    -vf "lenscorrection=cx=0.5:cy=0.5:k1=${FX_K1}:k2=${FX_K2},scale=${OUT_SIZE}:${OUT_SIZE},setsar=1" \
     -c:v libx264 -preset ultrafast -tune zerolatency \
     -b:v "$BITRATE" -g $((FPS*2)) \
     -f rtsp -rtsp_transport tcp \
