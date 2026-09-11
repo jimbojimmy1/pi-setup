@@ -46,13 +46,13 @@ sudo tee "$FX_CONF" > /dev/null << CONFEOF
 # WIDTH/HEIGHT stay 4:3 so the full uncropped sensor FOV is captured.
 # OUT_SIZE squashes that into a square -> stretched, exaggerated fisheye.
 # K1/K2: more negative = more bulge.
-WIDTH=960
-HEIGHT=720
-FPS=20
-BITRATE=3M
-FX_K1=-0.8
-FX_K2=-0.35
-OUT_SIZE=720
+WIDTH=640
+HEIGHT=480
+FPS=15
+BITRATE=2M
+FX_K1=-0.2
+FX_K2=-0.05
+OUT_SIZE=480
 CONFEOF
 
 # ---- Pipeline script ----
@@ -64,6 +64,14 @@ source /etc/default/picam-fx
 # wait for mediamtx to be listening
 until ss -tln | grep -q ':8554 '; do sleep 1; done
 
+# Pi 3 has a hardware H.264 encoder — software x264 pins the CPU and adds
+# seconds of lag. Use v4l2m2m when the ffmpeg build exposes it.
+if ffmpeg -hide_banner -encoders 2>/dev/null | grep -q h264_v4l2m2m; then
+  VENC="-c:v h264_v4l2m2m -b:v $BITRATE"
+else
+  VENC="-c:v libx264 -preset ultrafast -tune zerolatency -b:v $BITRATE"
+fi
+
 rpicam-vid \
     -t 0 \
     --width "$WIDTH" --height "$HEIGHT" \
@@ -72,11 +80,11 @@ rpicam-vid \
     --nopreview \
     -o - \
   | ffmpeg -loglevel warning \
+    -fflags nobuffer -flags low_delay \
     -f rawvideo -pix_fmt yuv420p \
     -s "${WIDTH}x${HEIGHT}" -r "$FPS" -i - \
     -vf "lenscorrection=cx=0.5:cy=0.5:k1=${FX_K1}:k2=${FX_K2},scale=${OUT_SIZE}:${OUT_SIZE},setsar=1" \
-    -c:v libx264 -preset ultrafast -tune zerolatency \
-    -b:v "$BITRATE" -g $((FPS*2)) \
+    $VENC -g "$FPS" \
     -f rtsp -rtsp_transport tcp \
     rtsp://localhost:8554/cam
 PIPEEOF
