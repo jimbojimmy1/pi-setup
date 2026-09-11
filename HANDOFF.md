@@ -1,0 +1,233 @@
+# Money Agent handoff
+
+Updated: 2026-08-14 03:54 (America/New_York)
+
+## Objective
+
+Turn the original research-only Raspberry Pi daemon into a low-intervention,
+ethical revenue loop that researches, scores, prepares safe work on owned
+projects, exposes blockers, measures results, and iterates without spending or
+impersonating the owner.
+
+## Repository state
+
+- Pull request: https://github.com/jimbojimmy1/pi-setup/pull/1
+- Branch: `claude/money-making-agent-debate-fp1ag2`
+- Latest implementation commit before this handoff update: `2db2b64`
+- PR state checked before this update: open, draft, mergeable
+- Remote PR implementation head verified after push: `2db2b64`
+
+## Implemented architecture
+
+- Versioned runtime source now lives under `money_agent/`.
+- SQLite persists bounded experiments and append-only experiment events.
+- Unknown and paid actions fail closed to `OWNER_REQUIRED`; deceptive or spammy
+  actions are rejected.
+- Promoted judge results create one deduplicated, deterministically classified
+  experiment. Model-supplied autonomy claims are ignored.
+- Ready experiments are exported atomically to redacted JSON and Markdown before
+  the daemon researches another idea.
+- The dashboard exposes experiments, next work, and owner-required blockers
+  without exposing environment credentials.
+- The default profile prioritizes the existing FunnelSleuth project and assumes
+  zero startup spend.
+- The installer stages and validates canonical versioned source, preserves
+  operator files and data, and defaults API spending to zero.
+- Experiments now name a measurement source and store structured, deduplicated
+  observations in an append-only evidence ledger.
+- Monitoring rejects non-public URLs, blocks missing or unknown sources, and
+  prevents analytics or health evidence from reporting revenue.
+- A model cannot trust its own proposed connector; the installer defaults
+  `MA_TRUSTED_MEASUREMENT_SOURCES` to empty.
+- A strict local importer accepts one bounded JSON observation from a file or
+  stdin, rejects unknown and sensitive-looking fields, and never echoes rejected
+  payload contents.
+- Evidence-backed outcomes are deterministic: wins need positive evidence,
+  losses need a completed window with no payment, public health cannot close an
+  experiment, and terminal conflicts are rejected.
+- Accepted terminal results add an event and a reusable lesson for future idea
+  scoring.
+- The daemon atomically consumes up to 25 local observation files per tick,
+  archives accepted/rejected inputs under the artifact root, rejects symlinks,
+  and exposes only counts in logs.
+- Public checks use a validated direct IP, TLS hostname verification, a bounded
+  `HEAD` request, no redirects, and one availability observation per hour.
+- Each valid owned-project URL gets one deterministic zero-cost `AUTO_LOCAL`
+  availability experiment, so FunnelSleuth monitoring starts after the updated
+  daemon is installed and restarted.
+- GitHub Actions now runs the installer syntax check, installer preservation
+  test, and complete Python suite on pull requests and pushes to `main`, with
+  read-only repository permissions and a ten-minute job limit.
+- The dashboard reports only inbox file counts and the latest public
+  availability state/time. It does not expose filenames, payloads, evidence
+  references, or infer revenue from uptime.
+- Every valid owned URL gets a separate checkout-readiness experiment. Its
+  bounded direct-IP HTTPS GET scans only actionable HTML attributes for narrow
+  Stripe or PayPal destinations, follows nothing, and records at most one
+  non-revenue observation per hour.
+- The dashboard now shows checkout readiness per matching project experiment.
+  Missing or zero evidence retains the payment-link blocker; positive matching
+  evidence clears only that warning, never other blockers or revenue status.
+- Each install now records the exact copied revision in `release.txt`; cloned
+  installs flag dirty worktrees and standalone installs require an immutable
+  full commit SHA instead of a moving branch or tag.
+- The release marker is invalidated before runtime replacement and published
+  only after all files install, so a partial upgrade cannot retain stale
+  `current` provenance.
+- The dashboard compares the installed marker only with an optional
+  operator-configured reviewed SHA. It reports `current`, `outdated`, `dirty`,
+  or `unknown` and never treats a mutable ref as proof of deployment.
+- A separate deployment preflight reads only a physically capped local release
+  marker and prints the exact reviewed commit, comparison status, service names,
+  and shell-escaped upgrade/rollback commands without executing them.
+- Printed upgrade and rollback blocks use fail-fast subshells, fetch each exact
+  target commit before checkout, and require explicit owner approval before use.
+- Preflight tests use fail-fast command stubs to prove that inspection invokes
+  no Git, network, installer, sudo, or systemctl action; malformed, binary,
+  oversized, dirty, missing, and mutable release values fail closed.
+- The dashboard now answers the revenue question explicitly with an all-time
+  verified-revenue amount, payment-evidence count, and latest evidence age from
+  the complete observation ledger rather than its 100-row display window.
+- Revenue totals include only positive `payment_provider_readonly` and
+  `owner_verified` evidence, deduplicated across experiments by source/reference;
+  analytics, public checks, checkout readiness, forecasts, and spend are excluded.
+- Malformed historical rows fail closed by SQLite storage class, bounded evidence
+  reference, native numeric type, positivity, and finiteness before deduplication.
+  Invalid public timestamps are skipped so older valid health evidence remains.
+- Each named owned project now gets a zero-cost local `owner_verified` revenue
+  lane before inbox processing. It starts in `measuring` with no observations,
+  cannot be exported as work, and asserts no revenue or payment-provider access.
+- A confirmed payment can now enter the existing strict importer through the
+  lane's exact `verified_payment` metric, update the deduplicated revenue total,
+  and add an evidence-backed lesson. Non-finite direct evidence fails closed.
+- Daemon lifecycle scans now include the complete experiment ledger, so an
+  active experiment cannot silently stop being monitored after 50 newer rows
+  and old owned-project monitors or revenue lanes are not recreated. The public
+  dashboard remains explicitly bounded to its newest 50 experiment rows.
+- Availability and checkout status now use independent latest-valid 0/1 public
+  evidence queries rather than the 100-row display window. Malformed binary,
+  text, non-finite, out-of-domain, invalid-time, or identity values fail closed
+  without breaking `/api/state` or creating a false checkout-ready signal.
+- Observation retries and public collectors now use the exact indexed database
+  identity `(experiment_id, source_kind, evidence_ref)` instead of bounded
+  display history. The first accepted row wins; retries create no event, status,
+  result, outcome, lesson, or repeated public network probe after 100 newer rows.
+
+## Current owned revenue project
+
+- Project: FunnelSleuth
+- Live URL: https://funnelsleuth.stinkchimp.chatgpt.site
+- Existing offers: $79 audit and $299 Fix Sprint
+- Honest status: no observed revenue is recorded by this repository
+- Verified revenue recorded: `$0.00` from zero payment-evidence items. This is
+  not a live Stripe, PayPal, bank, payout, or profit balance.
+- Owner-required blocker: connect an existing Stripe or PayPal payment link from
+  an authenticated owner session
+- Measurement blocker: no read-only Stripe, PayPal, or analytics adapter is
+  configured
+- Repository-only revenue lane: prepared in `40d8816`; it is not on the Pi and
+  remains empty until an owner independently confirms and imports a real payment
+- Public availability evidence: the bounded direct-IP probe returned HTTP 200
+  on 2026-08-12; this does not verify checkout, conversion, or revenue
+- Checkout readiness evidence: the bounded probe returned HTTP 200 but found no
+  recognized Stripe or PayPal destination on 2026-08-12; the owner checkout
+  blocker remains active
+- Installed Raspberry Pi release: unknown. These repository changes have not
+  been deployed or used to restart either service in this workstream.
+
+The daemon may prepare and implement bounded owned-site experiments. It must not
+spend money, contact people, create accounts, change payment or payout settings,
+accept legal terms, handle owner secrets, or claim unobserved earnings.
+
+## Verification
+
+Run from the repository root in Git Bash:
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+Latest combined verification before this documentation update:
+
+- Git Bash syntax checks for installer, preflight, and both shell suites: exit 0
+- Git Bash `bash tests/test_deploy_preflight.sh`: exit 0; all read-only and
+  fail-closed cases passed
+- Git Bash `bash tests/test_installer.sh`: exit 0; canonical source and operator-file
+  preservation checks passed twice
+- Python 3.11 `python -m unittest discover -s tests -v`: 74 tests passed in
+  6.457 seconds
+- `python -m compileall -q money_agent`: exit 0
+- `git diff --check`: exit 0
+- Installer tests also cover immutable standalone provenance and stale-marker
+  invalidation after an injected partial-upgrade failure.
+- GitHub Actions run `31768149133` for remote implementation head `2db2b64`
+  was in progress when this handoff was prepared.
+
+## Commits added in this workstream
+
+- `d2d8f88` design bounded execution loop
+- `6ed7f67` implementation plan
+- `43f7e67` version runtime source
+- `93abba6` ignore generated Python artifacts
+- `b133c42` persist measurable experiments
+- `52355e6` policy-check and atomically export handoffs
+- `0d4021d` convert promoted owned-project ideas into experiments
+- `ae8eb2f` show experiments and blockers on the dashboard
+- `2404038` add the durable interim handoff
+- `96d8214` replace the embedded installer with the canonical source installer
+- `d89c2e6` document operations and the durable handoff
+- `0113b5c` plan evidence-backed monitoring
+- `5bb5514` persist trusted observations
+- `36c5a02` enforce the fail-closed monitoring policy
+- `ced8cdc` integrate monitoring with the daemon, dashboard, and installer
+- `ec400eb` default configured measurement sources to untrusted
+- `652d387` hand off evidence-backed monitoring
+- `75ba199` plan strict local observation import
+- `f97fa69` add the strict JSON importer
+- `d74daf4` apply evidence-backed terminal outcomes
+- `038feda` hand off strict observation import
+- `6c6dd69` plan the observation inbox and health checks
+- `686011f` add the atomic observation inbox
+- `362a10d` add bounded public-health evidence
+- `be3e857` run inbox and health monitoring each tick
+- `e4bbff7` bootstrap owned-project health monitoring
+- `d157225` hand off automated evidence collection and final verification
+- `c844c55` plan dashboard evidence visibility
+- `6af160c` show evidence health on the dashboard
+- `d87b258` plan checkout-readiness monitoring
+- `b2f50e9` monitor public checkout readiness
+- `b7533b2` plan checkout dashboard status
+- `ae02000` show checkout readiness on the dashboard
+- `f2b8120` plan runtime release status
+- `99c00a1` track installed runtime release
+- `c50fb31` keep release provenance fail closed
+- `867f04c` design deployment preflight
+- `dcede61` add read-only deployment preflight
+- `5d89c84` make deployment commands recoverable
+- `0f4488e` reject binary release markers
+- `3b2d30b` design verified revenue summary
+- `dbd6149` show verified revenue evidence
+- `9293d5d` reject malformed revenue evidence
+- `3c09bc8` validate revenue rows before deduplication
+- `59478aa` skip malformed public evidence times
+- `40d8816` prepare owner-verified revenue evidence
+- `97376cf` design complete experiment lifecycle scans
+- `2eba682` plan complete experiment lifecycle scans
+- `2feda5a` scan complete experiment lifecycle
+- `c707ae6` design truthful public evidence snapshots
+- `ca24d51` plan truthful public evidence snapshots
+- `04210f1` keep public evidence snapshots truthful
+- `b090db7` design long-ledger evidence idempotency
+- `52bc5fc` plan long-ledger evidence idempotency
+- `2db2b64` make evidence retries durable
+
+## Next action
+
+Wait for explicit owner approval before running the preflight on the Pi,
+deploying the verified-revenue dashboard, or executing any command it prints.
+Until approval arrives, keep repository-only evidence and documentation honest,
+monitor CI for the pushed idempotency fix, and investigate additional zero-cost
+owned-asset experiments without implying the Pi is current. Do not deploy,
+restart services, connect financial or analytics accounts, follow checkout
+links, send alerts/messages, or request credentials without explicit owner
+approval.

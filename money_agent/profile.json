@@ -1,0 +1,36 @@
+{
+  "location": "St. Louis, MO",
+  "hours_per_week": 10,
+  "starting_capital_usd": 0,
+  "skills": [
+    "Python and Linux",
+    "Raspberry Pi / embedded hardware",
+    "cameras, streaming, computer vision",
+    "home automation and networking",
+    "building small web apps and dashboards"
+  ],
+  "assets": [
+    "a fleet of Raspberry Pis running 24/7",
+    "cameras and an SDR",
+    "a home lab with static networking",
+    "an existing habit of shipping small working projects"
+  ],
+  "constraints": [
+    "no employees and no co-founder",
+    "no physical inventory that has to be warehoused",
+    "nothing requiring a license I do not hold",
+    "zero startup spend unless the owner explicitly approves it",
+    "must survive being run 10 hours a week alongside a day job"
+  ],
+  "goal": "Build to $2,000/month of durable, mostly-passive income within 12 months, starting from skills and hardware I already have.",
+  "notes": "Prefers technical products and services over content or audience plays. Hates anything that needs daily manual grinding.",
+  "owned_projects": [
+    {
+      "name": "FunnelSleuth",
+      "url": "https://funnelsleuth.stinkchimp.chatgpt.site",
+      "offers_usd": [79, 299],
+      "constraint": "Checkout requires one owner-authenticated payment-link setup.",
+      "objective": "Earn qualified organic traffic and improve conversion without spam."
+    }
+  ]
+}

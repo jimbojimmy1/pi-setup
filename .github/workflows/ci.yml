@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install test dependency
+        run: python3 -m pip install Flask
+
+      - name: Check shell syntax
+        run: |
+          bash -n setup-money-agent.sh
+          bash -n money-agent-deploy-preflight.sh
+
+      - name: Test installer migration safety
+        run: bash tests/test_installer.sh
+
+      - name: Test read-only deployment preflight
+        run: bash tests/test_deploy_preflight.sh
+
+      - name: Run Python suite
+        run: python3 -m unittest discover -s tests -v

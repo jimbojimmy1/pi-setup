@@ -1,0 +1,593 @@
+import importlib
+import json
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+
+class DashboardStateTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        os.environ["MA_DB"] = str(self.root / "money.db")
+        os.environ["MA_ARTIFACT_ROOT"] = str(self.root / "artifacts")
+        os.environ["ANTHROPIC_API_KEY"] = "must-not-appear"
+
+        import money_agent.store as store
+
+        self.store = importlib.reload(store)
+        self.store.init()
+        idea_id = self.store.add_idea("FunnelSleuth experiment")
+        self.store.add_experiment(
+            idea_id=idea_id,
+            project="FunnelSleuth",
+            action_kind="build_owned_asset",
+            hypothesis="A specific page produces qualified runs.",
+            deliverable="Build a roofer audit page.",
+            metric="qualified runs in FunnelSleuth analytics",
+            stop_condition="Stop after 30 days with no qualified runs.",
+            window_days=30,
+            autonomy_class="CODEX_REVIEWED",
+            hours=2,
+            cost_usd=0,
+            measurement_source="analytics_readonly",
+        )
+        experiment_id = self.store.list_experiments()[0]["id"]
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="analytics_readonly",
+            metric="qualified runs in FunnelSleuth analytics",
+            value=2,
+            revenue_usd=0,
+            evidence_ref="analytics:2",
+            observed_at=1000,
+        )
+        artifacts = self.root / "artifacts"
+        artifacts.mkdir()
+        (artifacts / "next-work.json").write_text(
+            json.dumps({"project": "FunnelSleuth", "next_action": "Build page"}),
+            encoding="utf-8",
+        )
+
+    def tearDown(self):
+        self.store.close_connection()
+        os.environ.pop("MA_DB", None)
+        os.environ.pop("MA_ARTIFACT_ROOT", None)
+        os.environ.pop("ANTHROPIC_API_KEY", None)
+        os.environ.pop("MA_EXPECTED_RELEASE_REF", None)
+        self.tmp.cleanup()
+
+    def test_state_exposes_work_and_owner_blockers_without_secrets(self):
+        import money_agent.app as app_module
+
+        app_module = importlib.reload(app_module)
+        response = app_module.app.test_client().get("/api/state")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["experiments"][0]["project"], "FunnelSleuth")
+        self.assertEqual(payload["next_work"]["next_action"], "Build page")
+        self.assertTrue(payload["owner_blockers"])
+        self.assertEqual(payload["observations"][0]["source_kind"], "analytics_readonly")
+        self.assertNotIn("evidence_ref", payload["observations"][0])
+        self.assertNotIn("must-not-appear", response.get_data(as_text=True))
+
+    def test_state_reports_zero_when_no_verified_payment_is_recorded(self):
+        payload = self._state()
+
+        self.assertEqual(
+            payload["verified_revenue"],
+            {
+                "total_usd": 0.0,
+                "payments": 0,
+                "last_observed_at": None,
+                "age": "never",
+            },
+        )
+
+    def test_state_summarizes_only_permitted_payment_evidence(self):
+        experiment_id = self.store.list_experiments()[0]["id"]
+        for source_kind, amount, evidence_ref, observed_at in (
+            ("payment_provider_readonly", 79, "payment:79", 1400),
+            ("owner_verified", 299, "owner:299", 1500),
+            ("analytics_readonly", 999, "analytics:not-revenue", 2000),
+        ):
+            self.store.add_observation(
+                experiment_id=experiment_id,
+                source_kind=source_kind,
+                metric="qualified runs in FunnelSleuth analytics",
+                value=1,
+                revenue_usd=amount,
+                evidence_ref=evidence_ref,
+                observed_at=observed_at,
+            )
+        connection = self.store.conn()
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "owner_verified",
+                "qualified runs in FunnelSleuth analytics",
+                1,
+                float("inf"),
+                "owner:infinity",
+                "later",
+                1,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "owner_verified",
+                "qualified runs in FunnelSleuth analytics",
+                1,
+                b"79",
+                "owner:binary-amount",
+                1600,
+                1,
+            ),
+        )
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "owner_verified",
+                "qualified runs in FunnelSleuth analytics",
+                1,
+                79,
+                "owner:binary-time",
+                b"1600",
+                1,
+            ),
+        )
+        connection.commit()
+
+        payload = self._state(now=2100)
+
+        self.assertEqual(
+            payload["verified_revenue"],
+            {
+                "total_usd": 378.0,
+                "payments": 2,
+                "last_observed_at": 1500.0,
+                "age": "10m ago",
+            },
+        )
+        analytics = next(
+            item
+            for item in payload["observations"]
+            if item["source_kind"] == "analytics_readonly"
+            and item["observed_at"] == 2000
+        )
+        self.assertEqual(analytics["revenue_usd"], 0)
+        binary_amount = next(
+            item
+            for item in payload["observations"]
+            if item["source_kind"] == "owner_verified"
+            and item["observed_at"] == 1600
+        )
+        self.assertEqual(binary_amount["revenue_usd"], 0)
+        self.assertGreaterEqual(
+            sum(
+                item["source_kind"] == "owner_verified"
+                and item["observed_at"] is None
+                and item["revenue_usd"] == 0
+                for item in payload["observations"]
+            ),
+            2,
+        )
+
+    def test_template_renders_verified_revenue_as_recorded_evidence(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "money_agent"
+            / "templates"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("VERIFIED REVENUE", template)
+        self.assertIn("d.verified_revenue", template)
+        self.assertIn("verified revenue recorded", template)
+        self.assertIn("payment evidence", template)
+
+    def test_state_exposes_inbox_counts_and_latest_availability_without_file_details(self):
+        artifacts = self.root / "artifacts"
+        inbox = artifacts / "observation-inbox"
+        for name in ("incoming", "processing", "accepted", "rejected"):
+            directory = inbox / name
+            directory.mkdir(parents=True)
+            (directory / f"secret-{name}.json").write_text(
+                '{"private_payload":"must-not-appear"}', encoding="utf-8"
+            )
+        (inbox / "incoming" / "ignored.tmp").write_text("partial", encoding="utf-8")
+
+        experiment_id = self.store.list_experiments()[0]["id"]
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="public_availability",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="public-health:private-ref",
+            observed_at=1500,
+        )
+        connection = self.store.conn()
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "public_http",
+                "public_availability",
+                0,
+                0,
+                "public-health:malformed-time",
+                b"2000",
+                1,
+            ),
+        )
+        connection.commit()
+
+        import money_agent.app as app_module
+
+        app_module = importlib.reload(app_module)
+        with patch.object(app_module.time, "time", return_value=2100):
+            response = app_module.app.test_client().get("/api/state")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(
+            payload["inbox"],
+            {"incoming": 1, "processing": 1, "accepted": 1, "rejected": 1},
+        )
+        self.assertEqual(
+            payload["availability"],
+            {"available": True, "observed_at": 1500.0, "age": "10m ago"},
+        )
+        body = response.get_data(as_text=True)
+        self.assertNotIn("secret-incoming.json", body)
+        self.assertNotIn("must-not-appear", body)
+        self.assertNotIn("private-ref", body)
+
+    def test_template_renders_inbox_and_availability_summaries(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "money_agent"
+            / "templates"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("INBOX EVIDENCE", template)
+        for name in ("incoming", "processing", "accepted", "rejected"):
+            self.assertIn(f"d.inbox.{name}", template)
+        self.assertIn("PUBLIC AVAILABILITY", template)
+        self.assertIn("available", template)
+        self.assertIn("unavailable", template)
+
+    def _add_checkout_experiment(self):
+        idea_id = self.store.add_idea("FunnelSleuth checkout readiness")
+        return self.store.add_experiment(
+            idea_id=idea_id,
+            project="FunnelSleuth",
+            action_kind="checkout_readiness_check",
+            hypothesis="The public page exposes checkout.",
+            deliverable="Inspect the public page.",
+            metric="checkout_readiness",
+            stop_condition="Keep the owner blocker until ready.",
+            window_days=30,
+            autonomy_class="AUTO_LOCAL",
+            hours=0,
+            cost_usd=0,
+            measurement_source="public_http:https://example.com/offers",
+        )
+
+    def _state(self, now=2100):
+        import money_agent.app as app_module
+
+        app_module = importlib.reload(app_module)
+        with patch.object(app_module.time, "time", return_value=now):
+            response = app_module.app.test_client().get("/api/state")
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()
+
+    def test_missing_or_zero_checkout_evidence_keeps_project_blocker(self):
+        experiment_id = self._add_checkout_experiment()
+
+        missing = self._state()
+        self.assertEqual(
+            missing["checkout_readiness"],
+            [
+                {
+                    "project": "FunnelSleuth",
+                    "ready": None,
+                    "observed_at": None,
+                    "age": "never",
+                }
+            ],
+        )
+        self.assertTrue(
+            any(
+                blocker["action"]
+                == "Connect the existing Stripe or PayPal checkout link."
+                for blocker in missing["owner_blockers"]
+            )
+        )
+
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=0,
+            revenue_usd=0,
+            evidence_ref="checkout-readiness:zero",
+            observed_at=1500,
+        )
+        connection = self.store.conn()
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,?,?,?,?)",
+            (
+                experiment_id,
+                "public_http",
+                "checkout_readiness",
+                1,
+                0,
+                "checkout-readiness:malformed-time",
+                b"2000",
+                1,
+            ),
+        )
+        connection.commit()
+        zero = self._state()
+        self.assertFalse(zero["checkout_readiness"][0]["ready"])
+        self.assertEqual(zero["checkout_readiness"][0]["age"], "10m ago")
+        self.assertTrue(
+            any("checkout link" in blocker["action"] for blocker in zero["owner_blockers"])
+        )
+
+    def test_positive_matching_checkout_evidence_clears_only_link_blocker(self):
+        experiment_id = self._add_checkout_experiment()
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="checkout-readiness:ready",
+            observed_at=1500,
+        )
+
+        payload = self._state()
+
+        self.assertTrue(payload["checkout_readiness"][0]["ready"])
+        self.assertFalse(
+            any("checkout link" in blocker["action"] for blocker in payload["owner_blockers"])
+        )
+
+    def test_malformed_public_values_fail_closed_with_valid_fallback(self):
+        experiment_id = self._add_checkout_experiment()
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="checkout:valid",
+            observed_at=1500,
+        )
+        connection = self.store.conn()
+        for value, evidence_ref, observed_at in (
+            (2, "checkout:two", 1600),
+            (float("inf"), "checkout:infinite", 1700),
+            ("garbage", "checkout:text", 1800),
+            (b"1", "checkout:blob", 1900),
+        ):
+            connection.execute(
+                "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+                "revenue_usd,evidence_ref,observed_at,created_at)"
+                " VALUES(?,?,?,?,0,?,?,1)",
+                (
+                    experiment_id,
+                    "public_http",
+                    "checkout_readiness",
+                    value,
+                    evidence_ref,
+                    observed_at,
+                ),
+            )
+        connection.commit()
+
+        payload = self._state(now=2100)
+
+        self.assertEqual(
+            payload["checkout_readiness"][0],
+            {
+                "project": "FunnelSleuth",
+                "ready": True,
+                "observed_at": 1500.0,
+                "age": "10m ago",
+            },
+        )
+        malformed_times = {1600, 1700, 1800, 1900}
+        malformed_values = [
+            item["value"]
+            for item in payload["observations"]
+            if item["observed_at"] in malformed_times
+        ]
+        self.assertEqual(malformed_values, [None, None, None, None])
+
+    def test_malformed_public_identity_fields_remain_json_safe(self):
+        experiment_id = self._add_checkout_experiment()
+        connection = self.store.conn()
+        connection.execute(
+            "INSERT INTO observations(experiment_id,source_kind,metric,value,"
+            "revenue_usd,evidence_ref,observed_at,created_at)"
+            " VALUES(?,?,?,?,0,?,?,1)",
+            (
+                b"1",
+                b"public_http",
+                b"checkout_readiness",
+                1,
+                "malformed:identity",
+                1900,
+            ),
+        )
+        connection.commit()
+
+        payload = self._state(now=2100)
+        malformed = next(
+            item for item in payload["observations"] if item["observed_at"] == 1900
+        )
+
+        self.assertIsNone(malformed["experiment_id"])
+        self.assertEqual(malformed["source_kind"], "")
+        self.assertEqual(malformed["metric"], "")
+        self.assertEqual(malformed["value"], 1.0)
+
+    def test_checkout_snapshot_is_independent_of_display_window(self):
+        experiment_id = self._add_checkout_experiment()
+        self.store.add_observation(
+            experiment_id=experiment_id,
+            source_kind="public_http",
+            metric="checkout_readiness",
+            value=1,
+            revenue_usd=0,
+            evidence_ref="checkout:outside-display-window",
+            observed_at=1000,
+        )
+        analytics_id = next(
+            item["id"]
+            for item in self.store.list_experiments()
+            if item["measurement_source"] == "analytics_readonly"
+        )
+        for index in range(100):
+            self.store.add_observation(
+                experiment_id=analytics_id,
+                source_kind="analytics_readonly",
+                metric="qualified runs in FunnelSleuth analytics",
+                value=index,
+                revenue_usd=0,
+                evidence_ref=f"analytics:crowd-{index}",
+                observed_at=2000 + index,
+            )
+
+        payload = self._state(now=3100)
+
+        self.assertEqual(len(payload["observations"]), 100)
+        self.assertFalse(
+            any(item["metric"] == "checkout_readiness" for item in payload["observations"])
+        )
+        self.assertTrue(payload["checkout_readiness"][0]["ready"])
+        self.assertEqual(payload["checkout_readiness"][0]["observed_at"], 1000.0)
+
+    def test_template_renders_checkout_status_without_payment_claim(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "money_agent"
+            / "templates"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("CHECKOUT READINESS", template)
+        self.assertIn("d.checkout_readiness", template)
+        self.assertIn("checkout link detected", template)
+        self.assertIn("checkout link not detected", template)
+        self.assertIn("no checkout evidence", template)
+        self.assertIn("not a payment", template)
+
+    def _release_state(self, installed=None, expected=None):
+        marker = self.root / "release.txt"
+        if installed is not None:
+            marker.write_text(installed, encoding="utf-8")
+        elif marker.exists():
+            marker.unlink()
+
+        import money_agent.app as app_module
+
+        app_module = importlib.reload(app_module)
+        environment = {"MA_EXPECTED_RELEASE_REF": expected} if expected else {}
+        with patch.dict(os.environ, environment, clear=False), patch.object(
+            app_module, "RELEASE_MARKER", marker
+        ):
+            response = app_module.app.test_client().get("/api/state")
+        self.assertEqual(response.status_code, 200)
+        return response.get_json()["runtime_release"]
+
+    def test_runtime_release_reports_clean_match_and_mismatch(self):
+        revision = "6452753bc32f1eebc05cf9e3170f21e481a030ad"
+
+        self.assertEqual(
+            self._release_state(revision + "\n", revision[:12]),
+            {
+                "installed": revision,
+                "expected": revision[:12],
+                "status": "current",
+            },
+        )
+        self.assertEqual(
+            self._release_state(revision, "ae02000"),
+            {
+                "installed": revision,
+                "expected": "ae02000",
+                "status": "outdated",
+            },
+        )
+
+    def test_runtime_release_fails_closed_for_dirty_missing_or_invalid_markers(self):
+        revision = "6452753bc32f1eebc05cf9e3170f21e481a030ad"
+        self.assertEqual(
+            self._release_state(revision + "-dirty", revision),
+            {
+                "installed": revision + "-dirty",
+                "expected": revision,
+                "status": "dirty",
+            },
+        )
+        self.assertEqual(
+            self._release_state(None, revision),
+            {"installed": None, "expected": revision, "status": "unknown"},
+        )
+        self.assertEqual(
+            self._release_state("../../secret\n", revision),
+            {"installed": None, "expected": revision, "status": "unknown"},
+        )
+        self.assertEqual(
+            self._release_state("local-unversioned", "local-unversioned"),
+            {
+                "installed": "local-unversioned",
+                "expected": "local-unversioned",
+                "status": "unknown",
+            },
+        )
+        self.assertEqual(
+            self._release_state("main", "main"),
+            {"installed": "main", "expected": "main", "status": "unknown"},
+        )
+
+    def test_template_renders_runtime_release_without_deployment_claim(self):
+        template = (
+            Path(__file__).resolve().parents[1]
+            / "money_agent"
+            / "templates"
+            / "index.html"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("RUNTIME RELEASE", template)
+        self.assertIn("d.runtime_release", template)
+        for status in ("current", "outdated", "dirty", "unknown"):
+            self.assertIn(status, template)
+
+
+if __name__ == "__main__":
+    unittest.main()
